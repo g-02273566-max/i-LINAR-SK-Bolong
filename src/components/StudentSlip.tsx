@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Printer, Search, FileText, User, Calendar, BookOpen, GraduationCap } from 'lucide-react';
-import { Student, Screening, PhaseTest, ReadingRecord, cn } from '../types';
+import { Student, Screening, PhaseTest, ReadingRecord, cn, CLASSES } from '../types';
 
 export default function StudentSlip() {
   const [students, setStudents] = useState<Student[]>([]);
+  const [selectedClass, setSelectedClass] = useState('Semua');
   const [selectedStudentId, setSelectedStudentId] = useState<string>('');
   const [studentData, setStudentData] = useState<{
     student: Student;
@@ -53,19 +54,38 @@ export default function StudentSlip() {
     return 'text-slate-600';
   };
 
+  const filteredStudents = students.filter(s => selectedClass === 'Semua' || s.class === selectedClass);
+
   return (
     <div className="space-y-8">
       <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4 no-print">
-        <div className="flex items-center gap-4 flex-grow max-w-md">
-          <Search className="text-slate-400" size={20} />
-          <select 
-            value={selectedStudentId}
-            onChange={e => handleFetchData(e.target.value)}
-            className="w-full rounded-xl border-slate-200 text-sm"
-          >
-            <option value="">-- Pilih Murid untuk Jana Slip --</option>
-            {students.map(s => <option key={s.id} value={s.id}>{s.name} ({s.class})</option>)}
-          </select>
+        <div className="flex flex-col md:flex-row items-center gap-4 flex-grow">
+          <div className="flex items-center gap-2 w-full md:w-48">
+            <Search className="text-slate-400" size={18} />
+            <select 
+              value={selectedClass}
+              onChange={e => {
+                setSelectedClass(e.target.value);
+                setSelectedStudentId('');
+                setStudentData(null);
+              }}
+              className="w-full rounded-xl border-slate-200 text-sm"
+            >
+              <option value="Semua">Semua Kelas</option>
+              {CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+
+          <div className="w-full flex-grow">
+            <select 
+              value={selectedStudentId}
+              onChange={e => handleFetchData(e.target.value)}
+              className="w-full rounded-xl border-slate-200 text-sm"
+            >
+              <option value="">-- Pilih Murid untuk Jana Slip --</option>
+              {filteredStudents.map(s => <option key={s.id} value={s.id}>{s.name} ({s.class})</option>)}
+            </select>
+          </div>
         </div>
         
         <button

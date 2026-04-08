@@ -111,10 +111,18 @@ async function startServer() {
 
   // Dashboard Summary
   app.get("/api/dashboard/summary", (req, res) => {
-    const totalStudents = db.prepare("SELECT COUNT(*) as count FROM students WHERE archived = 0").get().count;
+    const { class: className } = req.query;
+    let studentQuery = "SELECT id FROM students WHERE archived = 0";
+    let params: any[] = [];
     
-    // Get latest status for each student from phase tests or screenings
-    const students = db.prepare("SELECT id FROM students WHERE archived = 0").all();
+    if (className && className !== 'Semua') {
+      studentQuery += " AND class = ?";
+      params.push(className);
+    }
+    
+    const students = db.prepare(studentQuery).all(...params);
+    const totalStudents = students.length;
+    
     const summary = {
       Intervensi: 0,
       Pengukuhan: 0,
@@ -123,12 +131,10 @@ async function startServer() {
     };
 
     students.forEach(s => {
-      // Check latest phase test
       const latestTest = db.prepare("SELECT status FROM phase_tests WHERE student_id = ? ORDER BY created_at DESC LIMIT 1").get(s.id);
       if (latestTest) {
         summary[latestTest.status.replace('LULUS ', '')]++;
       } else {
-        // Check screening
         const screening = db.prepare("SELECT status FROM screenings WHERE student_id = ? LIMIT 1").get(s.id);
         if (screening) {
           summary[screening.status]++;
@@ -139,6 +145,50 @@ async function startServer() {
     });
 
     res.json({ totalStudents, summary });
+  });
+
+  // Dashboard Phase Analysis
+  app.get("/api/dashboard/phases", (req, res) => {
+    const { class: className } = req.query;
+    let studentQuery = "SELECT id FROM students WHERE archived = 0";
+    let params: any[] = [];
+    
+    if (className && className !== 'Semua') {
+      studentQuery += " AND class = ?";
+      params.push(className);
+    }
+    
+    const students = db.prepare(studentQuery).all(...params);
+    
+    const phases = [
+      { name: 'Saringan', Intervensi: 0, Pengukuhan: 0, Penggayaan: 0 },
+      { name: 'Fasa 1', Intervensi: 0, Pengukuhan: 0, Penggayaan: 0 },
+      { name: 'Fasa 2', Intervensi: 0, Pengukuhan: 0, Penggayaan: 0 },
+      { name: 'Fasa 3', Intervensi: 0, Pengukuhan: 0, Penggayaan: 0 },
+      { name: 'Fasa 4', Intervensi: 0, Pengukuhan: 0, Penggayaan: 0 },
+    ];
+
+    students.forEach(s => {
+      // Screening
+      const screening = db.prepare("SELECT status FROM screenings WHERE student_id = ? LIMIT 1").get(s.id);
+      if (screening) {
+        phases[0][screening.status as keyof typeof phases[0]]++;
+      }
+
+      // Phases 1-4
+      for (let i = 1; i <= 4; i++) {
+        const test = db.prepare("SELECT status FROM phase_tests WHERE student_id = ? AND phase = ? ORDER BY created_at DESC LIMIT 1").get(s.id, i);
+        if (test) {
+          const status = test.status.replace('LULUS ', '');
+          const phaseObj = phases[i];
+          if (status in phaseObj) {
+            (phaseObj as any)[status]++;
+          }
+        }
+      }
+    });
+
+    res.json(phases);
   });
 
   // Vite middleware for development

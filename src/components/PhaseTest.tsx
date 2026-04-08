@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Check, X, Save, GraduationCap, AlertCircle } from 'lucide-react';
-import { SUBJECTS, PHASES, Student, cn } from '../types';
+import { SUBJECTS, PHASES, Student, cn, CLASSES } from '../types';
 
 const TEST_ITEMS = {
   BM: {
@@ -22,6 +22,7 @@ const TEST_ITEMS = {
 
 export default function PhaseTest() {
   const [students, setStudents] = useState<Student[]>([]);
+  const [selectedClass, setSelectedClass] = useState('Semua');
   const [selectedStudent, setSelectedStudent] = useState('');
   const [selectedSubject, setSelectedSubject] = useState('BM');
   const [selectedPhase, setSelectedPhase] = useState(1);
@@ -102,6 +103,8 @@ export default function PhaseTest() {
 
   const currentItems = TEST_ITEMS[selectedSubject as keyof typeof TEST_ITEMS];
 
+  const filteredStudents = students.filter(s => selectedClass === 'Semua' || s.class === selectedClass);
+
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       <div className="bg-white p-8 rounded-2xl border border-slate-200 shadow-sm space-y-6">
@@ -134,12 +137,33 @@ export default function PhaseTest() {
         )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="space-y-2">
-            <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Pilih Murid</label>
-            <select value={selectedStudent} onChange={e => setSelectedStudent(e.target.value)} className="w-full rounded-xl border-slate-200">
-              <option value="">-- Pilih Murid --</option>
-              {students.map(s => <option key={s.id} value={s.id}>{s.name} ({s.class})</option>)}
-            </select>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Tapis Kelas</label>
+              <select 
+                value={selectedClass} 
+                onChange={e => {
+                  setSelectedClass(e.target.value);
+                  setSelectedStudent('');
+                }} 
+                className="w-full rounded-xl border-slate-200 text-sm"
+              >
+                <option value="Semua">Semua Kelas</option>
+                {CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Pilih Murid</label>
+              <select 
+                value={selectedStudent} 
+                onChange={e => setSelectedStudent(e.target.value)} 
+                className="w-full rounded-xl border-slate-200 text-sm"
+              >
+                <option value="">-- Pilih Murid --</option>
+                {filteredStudents.map(s => <option key={s.id} value={s.id}>{s.name} ({s.class})</option>)}
+              </select>
+            </div>
           </div>
           <div className="space-y-2">
             <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Subjek</label>

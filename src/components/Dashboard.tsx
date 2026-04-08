@@ -8,17 +8,23 @@ import { CLASSES } from '../types';
 
 export default function Dashboard() {
   const [summary, setSummary] = useState<any>(null);
+  const [phaseData, setPhaseData] = useState<any[]>([]);
   const [selectedClass, setSelectedClass] = useState('Semua');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch('/api/dashboard/summary')
-      .then(res => res.json())
-      .then(data => {
-        setSummary(data);
-        setLoading(false);
-      });
-  }, []);
+    setLoading(true);
+    const query = selectedClass !== 'Semua' ? `?class=${encodeURIComponent(selectedClass)}` : '';
+    
+    Promise.all([
+      fetch(`/api/dashboard/summary${query}`).then(res => res.json()),
+      fetch(`/api/dashboard/phases${query}`).then(res => res.json())
+    ]).then(([summaryData, phases]) => {
+      setSummary(summaryData);
+      setPhaseData(phases);
+      setLoading(false);
+    });
+  }, [selectedClass]);
 
   if (loading) return <div className="flex justify-center items-center h-64">Memuatkan data...</div>;
 
@@ -71,10 +77,42 @@ export default function Dashboard() {
         ))}
       </div>
 
+      {/* Phase Analysis Chart */}
+      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="text-lg font-bold text-slate-900">Analisis Keberkesanan Program (Berfasa)</h3>
+          <div className="flex gap-4 text-xs font-bold uppercase tracking-wider">
+            <div className="flex items-center gap-1.5"><div className="w-3 h-3 bg-red-500 rounded-sm" /> Intervensi</div>
+            <div className="flex items-center gap-1.5"><div className="w-3 h-3 bg-amber-500 rounded-sm" /> Pengukuhan</div>
+            <div className="flex items-center gap-1.5"><div className="w-3 h-3 bg-emerald-500 rounded-sm" /> Penggayaan</div>
+          </div>
+        </div>
+        <div className="h-96">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={phaseData}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} />
+              <XAxis dataKey="name" />
+              <YAxis />
+              <Tooltip 
+                cursor={{fill: 'transparent'}}
+                contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+              />
+              <Legend verticalAlign="top" align="right" height={36}/>
+              <Bar dataKey="Intervensi" stackId="a" fill="#ef4444" radius={[0, 0, 0, 0]} />
+              <Bar dataKey="Pengukuhan" stackId="a" fill="#f59e0b" radius={[0, 0, 0, 0]} />
+              <Bar dataKey="Penggayaan" stackId="a" fill="#10b981" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+        <p className="mt-4 text-xs text-slate-400 italic text-center">
+          * Graf di atas menunjukkan peralihan kumpulan murid dari Saringan hingga Fasa 4.
+        </p>
+      </div>
+
       {/* Charts Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-          <h3 className="text-lg font-bold text-slate-900 mb-6">Status Kumpulan Murid (%)</h3>
+          <h3 className="text-lg font-bold text-slate-900 mb-6">Status Semasa (%)</h3>
           <div className="h-80">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
@@ -99,7 +137,7 @@ export default function Dashboard() {
         </div>
 
         <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-          <h3 className="text-lg font-bold text-slate-900 mb-6">Analisis Pencapaian Mengikut Kumpulan</h3>
+          <h3 className="text-lg font-bold text-slate-900 mb-6">Pencapaian Terkini Mengikut Kumpulan</h3>
           <div className="h-80">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={pieData}>
