@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { BookOpen, Check, TrendingUp, User, Search } from 'lucide-react';
 import { CLASSES, Student, cn } from '../types';
+import { db } from '../firebase';
+import { collection, addDoc, onSnapshot, query, where, serverTimestamp, orderBy } from 'firebase/firestore';
 
 export default function Reading() {
   const [students, setStudents] = useState<Student[]>([]);
@@ -12,8 +14,18 @@ export default function Reading() {
   const [records, setRecords] = useState<any[]>([]);
 
   useEffect(() => {
-    fetch('/api/students').then(res => res.json()).then(setStudents);
-    fetch('/api/reading-records').then(res => res.json()).then(setRecords);
+    const unsubStudents = onSnapshot(query(collection(db, 'students'), where('archived', '==', false)), (snapshot) => {
+      setStudents(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Student[]);
+    });
+
+    const unsubRecords = onSnapshot(query(collection(db, 'reading_records'), orderBy('created_at', 'desc')), (snapshot) => {
+      setRecords(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+
+    return () => {
+      unsubStudents();
+      unsubRecords();
+    };
   }, []);
 
   const filteredStudents = students.filter(s => selectedClass === 'Semua' || s.class === selectedClass);
@@ -24,21 +36,17 @@ export default function Reading() {
     
     const isMahir = category === 'Tinggi' && readingStatus === 'Bacaan Lancar';
     
-    const res = await fetch('/api/reading-records', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        student_id: parseInt(selectedStudent),
+    try {
+      await addDoc(collection(db, 'reading_records'), {
+        student_id: selectedStudent,
         category,
         status: readingStatus,
-        is_mahir: isMahir
-      })
-    });
-
-    if (res.ok) {
-      // Refresh records
-      fetch('/api/reading-records').then(res => res.json()).then(setRecords);
+        is_mahir: isMahir,
+        created_at: serverTimestamp()
+      });
       setSelectedStudent('');
+    } catch (error) {
+      console.error("Error saving reading record:", error);
     }
     setLoading(false);
   };
@@ -162,7 +170,7 @@ export default function Reading() {
                         </span>
                       </td>
                       <td className="px-6 py-4 text-xs text-slate-400">
-                        {new Date(record.created_at).toLocaleDateString()}
+                        {record.created_at?.seconds ? new Date(record.created_at.seconds * 1000).toLocaleDateString() : 'N/A'}
                       </td>
                     </tr>
                   );

@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { UserPlus, Search, Trash2, Edit2, AlertCircle, Check } from 'lucide-react';
 import { CLASSES, Student, cn } from '../types';
+import { db } from '../firebase';
+import { collection, addDoc, getDocs, query, where, updateDoc, doc, onSnapshot } from 'firebase/firestore';
 
 export default function StudentData() {
   const [students, setStudents] = useState<Student[]>([]);
@@ -12,40 +14,45 @@ export default function StudentData() {
   const [message, setMessage] = useState<{type: 'success' | 'error', text: string} | null>(null);
 
   useEffect(() => {
-    fetchStudents();
-  }, []);
+    const q = query(collection(db, 'students'), where('archived', '==', false));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const studentList = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Student[];
+      setStudents(studentList);
+    });
 
-  const fetchStudents = () => {
-    fetch('/api/students').then(res => res.json()).then(setStudents);
-  };
+    return () => unsubscribe();
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name) return;
     setLoading(true);
     
-    const res = await fetch('/api/students', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, class: className, gender })
-    });
-
-    if (res.ok) {
+    try {
+      await addDoc(collection(db, 'students'), {
+        name: name.toUpperCase(),
+        class: className,
+        gender,
+        archived: false
+      });
       setMessage({ type: 'success', text: 'Murid berjaya ditambah!' });
       setName('');
-      fetchStudents();
-    } else {
+    } catch (error) {
       setMessage({ type: 'error', text: 'Gagal menambah murid.' });
     }
     setLoading(false);
   };
 
-  const handleDelete = async (id: number) => {
+  const handleDelete = async (id: string) => {
     if (!confirm('Adakah anda pasti mahu memadam murid ini? Rekod penilaian akan diarkibkan.')) return;
     
-    const res = await fetch(`/api/students/${id}`, { method: 'DELETE' });
-    if (res.ok) {
-      fetchStudents();
+    try {
+      await updateDoc(doc(db, 'students', id), { archived: true });
+    } catch (error) {
+      console.error("Error deleting student:", error);
     }
   };
 

@@ -23,15 +23,15 @@ export const SUBJECTS = [
 export const PHASES = [1, 2, 3, 4];
 
 export type Student = {
-  id: number;
+  id: string;
   name: string;
   class: string;
   gender: string;
 };
 
 export type Screening = {
-  id: number;
-  student_id: number;
+  id: string;
+  student_id: string;
   subject: string;
   items: string;
   status: string;
@@ -39,8 +39,8 @@ export type Screening = {
 };
 
 export type PhaseTest = {
-  id: number;
-  student_id: number;
+  id: string;
+  student_id: string;
   subject: string;
   phase: number;
   items: string;
@@ -49,10 +49,10 @@ export type PhaseTest = {
 };
 
 export type ReadingRecord = {
-  id: number;
-  student_id: number;
+  id: string;
+  student_id: string;
   category: string;
   status: string;
-  is_mahir: number;
+  is_mahir: boolean;
   created_at: string;
 };

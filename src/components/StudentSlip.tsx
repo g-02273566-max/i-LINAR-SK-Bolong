@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Printer, Search, FileText, User, Calendar, BookOpen, GraduationCap } from 'lucide-react';
 import { Student, Screening, PhaseTest, ReadingRecord, cn, CLASSES } from '../types';
+import { db } from '../firebase';
+import { collection, getDocs, query, where, doc, getDoc } from 'firebase/firestore';
 
 export default function StudentSlip() {
   const [students, setStudents] = useState<Student[]>([]);
@@ -14,7 +16,12 @@ export default function StudentSlip() {
   } | null>(null);
 
   useEffect(() => {
-    fetch('/api/students').then(res => res.json()).then(setStudents);
+    const fetchStudents = async () => {
+      const q = query(collection(db, 'students'), where('archived', '==', false));
+      const snapshot = await getDocs(q);
+      setStudents(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Student[]);
+    };
+    fetchStudents();
   }, []);
 
   const handleFetchData = async (id: string) => {
@@ -24,16 +31,16 @@ export default function StudentSlip() {
       return;
     }
 
-    const [scRes, ptRes, rrRes] = await Promise.all([
-      fetch('/api/screenings').then(res => res.json()),
-      fetch('/api/phase-tests').then(res => res.json()),
-      fetch('/api/reading-records').then(res => res.json())
+    const [scSnap, ptSnap, rrSnap] = await Promise.all([
+      getDocs(query(collection(db, 'screenings'), where('student_id', '==', id))),
+      getDocs(query(collection(db, 'phase_tests'), where('student_id', '==', id))),
+      getDocs(query(collection(db, 'reading_records'), where('student_id', '==', id)))
     ]);
 
-    const student = students.find(s => s.id === parseInt(id))!;
-    const studentScreenings = scRes.filter((s: any) => s.student_id === parseInt(id));
-    const studentPhaseTests = ptRes.filter((s: any) => s.student_id === parseInt(id));
-    const studentReading = rrRes.filter((s: any) => s.student_id === parseInt(id));
+    const student = students.find(s => s.id === id)!;
+    const studentScreenings = scSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Screening[];
+    const studentPhaseTests = ptSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as PhaseTest[];
+    const studentReading = rrSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as ReadingRecord[];
 
     setStudentData({
       student,

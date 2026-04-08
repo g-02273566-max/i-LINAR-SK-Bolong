@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Check, X, Save, GraduationCap, AlertCircle } from 'lucide-react';
 import { SUBJECTS, PHASES, Student, cn, CLASSES } from '../types';
+import { db } from '../firebase';
+import { collection, addDoc, query, where, onSnapshot, serverTimestamp } from 'firebase/firestore';
 
 const TEST_ITEMS = {
   BM: {
@@ -33,7 +35,16 @@ export default function PhaseTest() {
   const [message, setMessage] = useState<{type: 'success' | 'error', text: string} | null>(null);
 
   useEffect(() => {
-    fetch('/api/students').then(res => res.json()).then(setStudents);
+    const q = query(collection(db, 'students'), where('archived', '==', false));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const studentList = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Student[];
+      setStudents(studentList);
+    });
+
+    return () => unsubscribe();
   }, []);
 
   useEffect(() => {
@@ -80,22 +91,20 @@ export default function PhaseTest() {
     if (!selectedStudent) return;
     setLoading(true);
     const status = calculateStatus();
-    const res = await fetch('/api/phase-tests', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        student_id: parseInt(selectedStudent),
+    
+    try {
+      await addDoc(collection(db, 'phase_tests'), {
+        student_id: selectedStudent,
         subject: selectedSubject,
         phase: selectedPhase,
-        items: results,
-        status
-      })
-    });
+        items: JSON.stringify(results),
+        status,
+        created_at: serverTimestamp()
+      });
 
-    if (res.ok) {
       setMessage({ type: 'success', text: 'Ujian Pelepasan berjaya direkodkan!' });
       setSelectedStudent('');
-    } else {
+    } catch (error) {
       setMessage({ type: 'error', text: 'Gagal merekod ujian.' });
     }
     setLoading(false);

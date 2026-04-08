@@ -1,0 +1,74 @@
+{
+  "entities": {
+    "Student": {
+      "title": "Student",
+      "description": "Student information",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "class": { "type": "string" },
+        "gender": { "type": "string" },
+        "archived": { "type": "boolean" }
+      },
+      "required": ["name", "class"]
+    },
+    "Screening": {
+      "title": "Screening",
+      "description": "Initial screening results",
+      "type": "object",
+      "properties": {
+        "student_id": { "type": "string" },
+        "subject": { "type": "string" },
+        "items": { "type": "string" },
+        "status": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["student_id", "subject", "status"]
+    },
+    "PhaseTest": {
+      "title": "PhaseTest",
+      "description": "Phase test results",
+      "type": "object",
+      "properties": {
+        "student_id": { "type": "string" },
+        "subject": { "type": "string" },
+        "phase": { "type": "number" },
+        "items": { "type": "string" },
+        "status": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["student_id", "subject", "phase", "status"]
+    },
+    "ReadingRecord": {
+      "title": "ReadingRecord",
+      "description": "Reading progress record",
+      "type": "object",
+      "properties": {
+        "student_id": { "type": "string" },
+        "category": { "type": "string" },
+        "status": { "type": "string" },
+        "is_mahir": { "type": "boolean" },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["student_id", "category", "status"]
+    }
+  },
+  "firestore": {
+    "/students/{studentId}": {
+      "schema": "Student",
+      "description": "Collection of students"
+    },
+    "/screenings/{screeningId}": {
+      "schema": "Screening",
+      "description": "Collection of screening results"
+    },
+    "/phase_tests/{testId}": {
+      "schema": "PhaseTest",
+      "description": "Collection of phase test results"
+    },
+    "/reading_records/{recordId}": {
+      "schema": "ReadingRecord",
+      "description": "Collection of reading records"
+    }
+  }
+}

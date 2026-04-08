@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Search, Filter, Calendar, User, BookOpen, ChevronRight } from 'lucide-react';
 import { CLASSES, Student, Screening, PhaseTest, cn } from '../types';
+import { db } from '../firebase';
+import { collection, onSnapshot, query, where } from 'firebase/firestore';
 
 export default function Records() {
   const [students, setStudents] = useState<Student[]>([]);
@@ -10,15 +12,23 @@ export default function Records() {
   const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
-    Promise.all([
-      fetch('/api/students').then(res => res.json()),
-      fetch('/api/screenings').then(res => res.json()),
-      fetch('/api/phase-tests').then(res => res.json())
-    ]).then(([s, sc, pt]) => {
-      setStudents(s);
-      setScreenings(sc);
-      setPhaseTests(pt);
+    const unsubStudents = onSnapshot(query(collection(db, 'students'), where('archived', '==', false)), (snapshot) => {
+      setStudents(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Student[]);
     });
+
+    const unsubScreenings = onSnapshot(collection(db, 'screenings'), (snapshot) => {
+      setScreenings(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Screening[]);
+    });
+
+    const unsubPhaseTests = onSnapshot(collection(db, 'phase_tests'), (snapshot) => {
+      setPhaseTests(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as PhaseTest[]);
+    });
+
+    return () => {
+      unsubStudents();
+      unsubScreenings();
+      unsubPhaseTests();
+    };
   }, []);
 
   const filteredStudents = students.filter(s => {
@@ -27,10 +37,14 @@ export default function Records() {
     return matchesClass && matchesSearch;
   });
 
-  const getStudentStatus = (studentId: number) => {
+  const getStudentStatus = (studentId: string) => {
     const latestTest = phaseTests
       .filter(pt => pt.student_id === studentId)
-      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
+      .sort((a, b) => {
+        const timeA = a.created_at?.seconds || 0;
+        const timeB = b.created_at?.seconds || 0;
+        return timeB - timeA;
+      })[0];
     
     if (latestTest) return latestTest.status;
 

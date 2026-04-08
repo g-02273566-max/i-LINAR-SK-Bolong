@@ -4,7 +4,9 @@ import {
   PieChart, Pie, Cell
 } from 'recharts';
 import { Users, TrendingUp, CheckCircle, AlertCircle, Filter } from 'lucide-react';
-import { CLASSES } from '../types';
+import { CLASSES, Student, Screening, PhaseTest } from '../types';
+import { db } from '../firebase';
+import { collection, onSnapshot, query, where } from 'firebase/firestore';
 
 export default function Dashboard() {
   const [summary, setSummary] = useState<any>(null);
@@ -14,16 +16,83 @@ export default function Dashboard() {
 
   useEffect(() => {
     setLoading(true);
-    const query = selectedClass !== 'Semua' ? `?class=${encodeURIComponent(selectedClass)}` : '';
     
-    Promise.all([
-      fetch(`/api/dashboard/summary${query}`).then(res => res.json()),
-      fetch(`/api/dashboard/phases${query}`).then(res => res.json())
-    ]).then(([summaryData, phases]) => {
-      setSummary(summaryData);
-      setPhaseData(phases);
-      setLoading(false);
-    });
+    const unsubStudents = onSnapshot(
+      selectedClass === 'Semua' 
+        ? query(collection(db, 'students'), where('archived', '==', false))
+        : query(collection(db, 'students'), where('archived', '==', false), where('class', '==', selectedClass)),
+      (snapshot) => {
+        const studentList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Student[];
+        
+        const unsubScreenings = onSnapshot(collection(db, 'screenings'), (scSnap) => {
+          const screeningList = scSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Screening[];
+          
+          const unsubPhaseTests = onSnapshot(collection(db, 'phase_tests'), (ptSnap) => {
+            const phaseTestList = ptSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as PhaseTest[];
+            
+            // Process Summary
+            const studentIds = new Set(studentList.map(s => s.id));
+            const filteredScreenings = screeningList.filter(s => studentIds.has(s.student_id));
+            const filteredPhaseTests = phaseTestList.filter(s => studentIds.has(s.student_id));
+            
+            const currentStatus: Record<string, string> = {};
+            studentList.forEach(s => {
+              const latestTest = filteredPhaseTests
+                .filter(pt => pt.student_id === s.id)
+                .sort((a, b) => {
+                  const timeA = (a.created_at as any)?.seconds || 0;
+                  const timeB = (b.created_at as any)?.seconds || 0;
+                  return timeB - timeA;
+                })[0];
+              
+              if (latestTest) {
+                currentStatus[s.id] = latestTest.status;
+              } else {
+                const screening = filteredScreenings.find(sc => sc.student_id === s.id);
+                currentStatus[s.id] = screening ? screening.status : 'Tiada Data';
+              }
+            });
+
+            const summaryCounts: Record<string, number> = { Intervensi: 0, Pengukuhan: 0, Penggayaan: 0 };
+            Object.values(currentStatus).forEach(status => {
+              if (status.includes('INTERVENSI')) summaryCounts.Intervensi++;
+              else if (status.includes('PENGUKUHAN')) summaryCounts.Pengukuhan++;
+              else if (status.includes('PENGGAYAAN')) summaryCounts.Penggayaan++;
+            });
+
+            setSummary({
+              totalStudents: studentList.length,
+              summary: summaryCounts
+            });
+
+            // Process Phase Data
+            const phases = ['Saringan', 'Fasa 1', 'Fasa 2', 'Fasa 3', 'Fasa 4'];
+            const phaseAnalysis = phases.map((phaseName, idx) => {
+              const counts: any = { name: phaseName, Intervensi: 0, Pengukuhan: 0, Penggayaan: 0 };
+              
+              if (idx === 0) {
+                filteredScreenings.forEach(s => {
+                  if (s.status.includes('Intervensi')) counts.Intervensi++;
+                  else if (s.status.includes('Pengukuhan')) counts.Pengukuhan++;
+                  else if (s.status.includes('Penggayaan')) counts.Penggayaan++;
+                });
+              } else {
+                filteredPhaseTests.filter(pt => pt.phase === idx).forEach(pt => {
+                  if (pt.status.includes('INTERVENSI')) counts.Intervensi++;
+                  else if (pt.status.includes('PENGUKUHAN')) counts.Pengukuhan++;
+                  else if (pt.status.includes('PENGGAYAAN')) counts.Penggayaan++;
+                });
+              }
+              return counts;
+            });
+            setPhaseData(phaseAnalysis);
+            setLoading(false);
+          });
+        });
+      }
+    );
+
+    return () => unsubStudents();
   }, [selectedClass]);
 
   if (loading) return <div className="flex justify-center items-center h-64">Memuatkan data...</div>;
