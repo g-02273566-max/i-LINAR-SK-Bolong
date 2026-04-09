@@ -1,22 +1,33 @@
 import { initializeApp } from 'firebase/app';
-import { getFirestore } from 'firebase/firestore';
+import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 
-// NOTE: In a real manual setup, you would paste your config here.
-// For this environment, we are simulating the transition to Firebase.
-// Since the automatic tool failed due to permissions, we will use a placeholder
-// and guide the user to provide their own config if they have one, 
-// or we will implement a client-side only Firebase setup if they prefer.
-
+// Use environment variables for Firebase configuration to ensure persistence and security
 const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_AUTH_DOMAIN",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_STORAGE_BUCKET",
-  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-  appId: "YOUR_APP_ID"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 export const auth = getAuth(app);
+
+// Validate connection to Firestore
+async function testConnection() {
+  try {
+    // Attempt to fetch a dummy document to verify connectivity
+    await getDocFromServer(doc(db, 'test', 'connection'));
+    console.log("Firebase connection established successfully.");
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('the client is offline')) {
+      console.error("Firebase connection failed: The client is offline. Please check your configuration.");
+    }
+    // Other errors are ignored as this is just a connection test
+  }
+}
+
+testConnection();
