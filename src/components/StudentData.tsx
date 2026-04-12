@@ -60,8 +60,9 @@ export default function StudentData() {
 
       setMessage({ type: 'success', text: 'Murid berjaya ditambah!' });
       setName('');
-    } catch (error) {
-      setMessage({ type: 'error', text: 'Gagal menambah murid.' });
+    } catch (error: any) {
+      console.error('Error adding student:', error);
+      setMessage({ type: 'error', text: `Gagal menambah murid: ${error.message || 'Ralat tidak diketahui'}` });
     }
     setLoading(false);
   };

@@ -115,8 +115,9 @@ export default function Screening() {
       setMessage({ type: 'success', text: 'Saringan berjaya direkodkan!' });
       setResults(new Array(5).fill(false));
       setSelectedStudent('');
-    } catch (error) {
-      setMessage({ type: 'error', text: 'Gagal merekod saringan.' });
+    } catch (error: any) {
+      console.error('Error saving screening:', error);
+      setMessage({ type: 'error', text: `Gagal merekod saringan: ${error.message || 'Ralat tidak diketahui'}` });
     }
     setLoading(false);
   };

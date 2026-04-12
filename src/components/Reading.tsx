@@ -60,8 +60,9 @@ export default function Reading() {
 
       if (error) throw error;
       setSelectedStudent('');
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error saving reading record:", error);
+      alert(`Gagal menyimpan rekod: ${error.message || 'Ralat tidak diketahui'}`);
     }
     setLoading(false);
   };
@@ -185,7 +186,7 @@ export default function Reading() {
                         </span>
                       </td>
                       <td className="px-6 py-4 text-xs text-slate-400">
-                        {record.created_at?.seconds ? new Date(record.created_at.seconds * 1000).toLocaleDateString() : 'N/A'}
+                        {record.created_at ? new Date(record.created_at).toLocaleDateString() : 'N/A'}
                       </td>
                     </tr>
                   );

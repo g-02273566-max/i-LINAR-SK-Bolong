@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Filter, Calendar, User, BookOpen, ChevronRight } from 'lucide-react';
+import { Search, Filter, Calendar, User, BookOpen, ChevronRight, ArrowLeft, TrendingUp, CheckCircle, AlertCircle } from 'lucide-react';
 import { CLASSES, Student, Screening, PhaseTest, cn } from '../types';
 import { supabase } from '../supabase';
 
@@ -7,8 +7,10 @@ export default function Records() {
   const [students, setStudents] = useState<Student[]>([]);
   const [screenings, setScreenings] = useState<Screening[]>([]);
   const [phaseTests, setPhaseTests] = useState<PhaseTest[]>([]);
+  const [readingRecords, setReadingRecords] = useState<any[]>([]);
   const [selectedClass, setSelectedClass] = useState('Semua');
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
 
   const fetchData = async () => {
     const { data: studentData } = await supabase
@@ -24,10 +26,15 @@ export default function Records() {
     const { data: testData } = await supabase
       .from('phase_tests')
       .select('*');
+
+    const { data: readingData } = await supabase
+      .from('reading_records')
+      .select('*');
     
     setStudents(studentData || []);
     setScreenings(screeningData || []);
     setPhaseTests(testData || []);
+    setReadingRecords(readingData || []);
   };
 
   useEffect(() => {
@@ -36,11 +43,13 @@ export default function Records() {
     const studentsChannel = supabase.channel('records_students').on('postgres_changes', { event: '*', schema: 'public', table: 'students' }, () => fetchData()).subscribe();
     const screeningsChannel = supabase.channel('records_screenings').on('postgres_changes', { event: '*', schema: 'public', table: 'screenings' }, () => fetchData()).subscribe();
     const testsChannel = supabase.channel('records_tests').on('postgres_changes', { event: '*', schema: 'public', table: 'phase_tests' }, () => fetchData()).subscribe();
+    const readingChannel = supabase.channel('records_reading').on('postgres_changes', { event: '*', schema: 'public', table: 'reading_records' }, () => fetchData()).subscribe();
 
     return () => {
       supabase.removeChannel(studentsChannel);
       supabase.removeChannel(screeningsChannel);
       supabase.removeChannel(testsChannel);
+      supabase.removeChannel(readingChannel);
     };
   }, []);
 
@@ -53,11 +62,7 @@ export default function Records() {
   const getStudentStatus = (studentId: string) => {
     const latestTest = phaseTests
       .filter(pt => pt.student_id === studentId)
-      .sort((a, b) => {
-        const timeA = new Date(a.created_at).getTime();
-        const timeB = new Date(b.created_at).getTime();
-        return timeB - timeA;
-      })[0];
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
     
     if (latestTest) return latestTest.status;
 
@@ -72,6 +77,123 @@ export default function Records() {
     if (status.includes('PENGGAYAAN')) return `${base} bg-emerald-100 text-emerald-700 border border-emerald-200`;
     return `${base} bg-slate-100 text-slate-500`;
   };
+
+  if (selectedStudentId) {
+    const student = students.find(s => s.id === selectedStudentId);
+    const studentScreenings = screenings.filter(s => s.student_id === selectedStudentId);
+    const studentTests = phaseTests.filter(s => s.student_id === selectedStudentId).sort((a, b) => a.phase - b.phase);
+    const studentReading = readingRecords.filter(s => s.student_id === selectedStudentId).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+    return (
+      <div className="space-y-6">
+        <button 
+          onClick={() => setSelectedStudentId(null)}
+          className="flex items-center gap-2 text-slate-500 hover:text-slate-900 transition-colors font-bold text-sm"
+        >
+          <ArrowLeft size={18} /> Kembali ke Senarai
+        </button>
+
+        <div className="bg-white p-8 rounded-2xl border border-slate-200 shadow-sm space-y-8">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-6">
+            <div className="flex items-center gap-4">
+              <div className="w-16 h-16 rounded-2xl bg-slate-900 flex items-center justify-center text-white">
+                <User size={32} />
+              </div>
+              <div>
+                <h2 className="text-2xl font-bold text-slate-900">{student?.name}</h2>
+                <p className="text-slate-500 font-medium">{student?.class} • {student?.gender}</p>
+              </div>
+            </div>
+            <div className="text-right">
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Status Terkini</p>
+              <span className={getStatusBadge(getStudentStatus(selectedStudentId))}>
+                {getStudentStatus(selectedStudentId)}
+              </span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            {/* Assessment History */}
+            <div className="space-y-6">
+              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                <TrendingUp size={20} className="text-emerald-600" />
+                Sejarah Penilaian (Saringan & Pelepasan)
+              </h3>
+              
+              <div className="space-y-4">
+                {/* Screening */}
+                {['BM', 'EN', 'NUM'].map(sub => {
+                  const screening = studentScreenings.find(s => s.subject === sub);
+                  return (
+                    <div key={sub} className="p-4 rounded-xl border border-slate-100 bg-slate-50">
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Saringan: {sub}</span>
+                        {screening ? (
+                          <span className={getStatusBadge(screening.status)}>{screening.status}</span>
+                        ) : (
+                          <span className="text-[10px] text-slate-400 italic">Tiada Rekod</span>
+                        )}
+                      </div>
+                      {screening && (
+                        <p className="text-xs text-slate-500">
+                          Tarikh: {new Date(screening.created_at).toLocaleDateString()}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
+
+                {/* Phase Tests */}
+                {studentTests.map((test, idx) => (
+                  <div key={idx} className="p-4 rounded-xl border border-emerald-100 bg-emerald-50/30">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-xs font-bold text-emerald-600 uppercase tracking-widest">Fasa {test.phase}: {test.subject}</span>
+                      <span className={getStatusBadge(test.status)}>{test.status}</span>
+                    </div>
+                    <p className="text-xs text-slate-500">
+                      Tarikh: {new Date(test.created_at).toLocaleDateString()}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Reading Records */}
+            <div className="space-y-6">
+              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                <BookOpen size={20} className="text-blue-600" />
+                Rekod Bacaan Terkini
+              </h3>
+              
+              <div className="space-y-3">
+                {studentReading.map((record, idx) => (
+                  <div key={idx} className="flex items-center justify-between p-4 rounded-xl border border-slate-100">
+                    <div>
+                      <p className="text-sm font-bold text-slate-900">{record.status}</p>
+                      <p className="text-xs text-slate-500">Kategori: {record.category}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-[10px] text-slate-400">{new Date(record.created_at).toLocaleDateString()}</p>
+                      {record.is_mahir && (
+                        <span className="text-[10px] font-bold text-emerald-600 flex items-center gap-1 justify-end">
+                          <CheckCircle size={12} /> MAHIR
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                {studentReading.length === 0 && (
+                  <div className="p-8 text-center border-2 border-dashed border-slate-100 rounded-2xl">
+                    <p className="text-sm text-slate-400 italic">Tiada rekod bacaan dijumpai.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -112,7 +234,7 @@ export default function Records() {
                 <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-widest">Kelas</th>
                 <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-widest">Saringan</th>
                 <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-widest">Status Semasa</th>
-                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-widest">Tindakan</th>
+                <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-widest text-right">Tindakan</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -143,14 +265,24 @@ export default function Records() {
                     <td className="px-6 py-4">
                       <span className={getStatusBadge(status)}>{status}</span>
                     </td>
-                    <td className="px-6 py-4">
-                      <button className="text-emerald-600 hover:text-emerald-700 text-xs font-bold flex items-center gap-1">
+                    <td className="px-6 py-4 text-right">
+                      <button 
+                        onClick={() => setSelectedStudentId(student.id)}
+                        className="text-emerald-600 hover:text-emerald-700 text-xs font-bold flex items-center gap-1 ml-auto"
+                      >
                         Lihat Detail <ChevronRight size={14} />
                       </button>
                     </td>
                   </tr>
                 );
               })}
+              {filteredStudents.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="px-6 py-12 text-center text-slate-400 italic">
+                    Tiada rekod murid dijumpai.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

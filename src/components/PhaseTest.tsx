@@ -122,8 +122,9 @@ export default function PhaseTest() {
 
       setMessage({ type: 'success', text: 'Ujian Pelepasan berjaya direkodkan!' });
       setSelectedStudent('');
-    } catch (error) {
-      setMessage({ type: 'error', text: 'Gagal merekod ujian.' });
+    } catch (error: any) {
+      console.error('Error saving phase test:', error);
+      setMessage({ type: 'error', text: `Gagal merekod ujian: ${error.message || 'Ralat tidak diketahui'}` });
     }
     setLoading(false);
   };
