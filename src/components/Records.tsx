@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Search, Filter, Calendar, User, BookOpen, ChevronRight } from 'lucide-react';
 import { CLASSES, Student, Screening, PhaseTest, cn } from '../types';
-import { db } from '../firebase';
-import { collection, onSnapshot, query, where } from 'firebase/firestore';
+import { supabase } from '../supabase';
 
 export default function Records() {
   const [students, setStudents] = useState<Student[]>([]);
@@ -11,23 +10,37 @@ export default function Records() {
   const [selectedClass, setSelectedClass] = useState('Semua');
   const [searchQuery, setSearchQuery] = useState('');
 
+  const fetchData = async () => {
+    const { data: studentData } = await supabase
+      .from('students')
+      .select('*')
+      .eq('archived', false)
+      .order('name', { ascending: true });
+    
+    const { data: screeningData } = await supabase
+      .from('screenings')
+      .select('*');
+    
+    const { data: testData } = await supabase
+      .from('phase_tests')
+      .select('*');
+    
+    setStudents(studentData || []);
+    setScreenings(screeningData || []);
+    setPhaseTests(testData || []);
+  };
+
   useEffect(() => {
-    const unsubStudents = onSnapshot(query(collection(db, 'students'), where('archived', '==', false)), (snapshot) => {
-      setStudents(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Student[]);
-    });
+    fetchData();
 
-    const unsubScreenings = onSnapshot(collection(db, 'screenings'), (snapshot) => {
-      setScreenings(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Screening[]);
-    });
-
-    const unsubPhaseTests = onSnapshot(collection(db, 'phase_tests'), (snapshot) => {
-      setPhaseTests(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as PhaseTest[]);
-    });
+    const studentsChannel = supabase.channel('records_students').on('postgres_changes', { event: '*', schema: 'public', table: 'students' }, () => fetchData()).subscribe();
+    const screeningsChannel = supabase.channel('records_screenings').on('postgres_changes', { event: '*', schema: 'public', table: 'screenings' }, () => fetchData()).subscribe();
+    const testsChannel = supabase.channel('records_tests').on('postgres_changes', { event: '*', schema: 'public', table: 'phase_tests' }, () => fetchData()).subscribe();
 
     return () => {
-      unsubStudents();
-      unsubScreenings();
-      unsubPhaseTests();
+      supabase.removeChannel(studentsChannel);
+      supabase.removeChannel(screeningsChannel);
+      supabase.removeChannel(testsChannel);
     };
   }, []);
 
@@ -41,8 +54,8 @@ export default function Records() {
     const latestTest = phaseTests
       .filter(pt => pt.student_id === studentId)
       .sort((a, b) => {
-        const timeA = a.created_at?.seconds || 0;
-        const timeB = b.created_at?.seconds || 0;
+        const timeA = new Date(a.created_at).getTime();
+        const timeB = new Date(b.created_at).getTime();
         return timeB - timeA;
       })[0];
     

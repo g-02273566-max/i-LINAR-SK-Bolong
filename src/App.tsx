@@ -23,8 +23,6 @@ import Records from './components/Records';
 import Reading from './components/Reading';
 import StudentSlip from './components/StudentSlip';
 import StudentData from './components/StudentData';
-import { db } from './firebase';
-import { collection, doc } from 'firebase/firestore';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');

@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Check, X, Save, GraduationCap, AlertCircle } from 'lucide-react';
 import { SUBJECTS, PHASES, Student, cn, CLASSES } from '../types';
-import { db } from '../firebase';
-import { collection, addDoc, query, where, onSnapshot, serverTimestamp } from 'firebase/firestore';
+import { supabase } from '../supabase';
 
 const TEST_ITEMS = {
   BM: {
@@ -34,17 +33,33 @@ export default function PhaseTest() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{type: 'success' | 'error', text: string} | null>(null);
 
-  useEffect(() => {
-    const q = query(collection(db, 'students'), where('archived', '==', false));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const studentList = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Student[];
-      setStudents(studentList);
-    });
+  const fetchStudents = async () => {
+    const { data, error } = await supabase
+      .from('students')
+      .select('*')
+      .eq('archived', false)
+      .order('name', { ascending: true });
+    
+    if (error) {
+      console.error('Error fetching students:', error);
+    } else {
+      setStudents(data || []);
+    }
+  };
 
-    return () => unsubscribe();
+  useEffect(() => {
+    fetchStudents();
+
+    const channel = supabase
+      .channel('students_changes_phasetest')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'students' }, () => {
+        fetchStudents();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   useEffect(() => {
@@ -93,14 +108,17 @@ export default function PhaseTest() {
     const status = calculateStatus();
     
     try {
-      await addDoc(collection(db, 'phase_tests'), {
-        student_id: selectedStudent,
-        subject: selectedSubject,
-        phase: selectedPhase,
-        items: JSON.stringify(results),
-        status,
-        created_at: serverTimestamp()
-      });
+      const { error } = await supabase
+        .from('phase_tests')
+        .insert([{
+          student_id: selectedStudent,
+          subject: selectedSubject,
+          phase: selectedPhase,
+          items: results,
+          status
+        }]);
+
+      if (error) throw error;
 
       setMessage({ type: 'success', text: 'Ujian Pelepasan berjaya direkodkan!' });
       setSelectedStudent('');

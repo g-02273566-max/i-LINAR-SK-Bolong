@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { BookOpen, Check, TrendingUp, User, Search } from 'lucide-react';
 import { CLASSES, Student, cn } from '../types';
-import { db } from '../firebase';
-import { collection, addDoc, onSnapshot, query, where, serverTimestamp, orderBy } from 'firebase/firestore';
+import { supabase } from '../supabase';
 
 export default function Reading() {
   const [students, setStudents] = useState<Student[]>([]);
@@ -13,18 +12,31 @@ export default function Reading() {
   const [loading, setLoading] = useState(false);
   const [records, setRecords] = useState<any[]>([]);
 
-  useEffect(() => {
-    const unsubStudents = onSnapshot(query(collection(db, 'students'), where('archived', '==', false)), (snapshot) => {
-      setStudents(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Student[]);
-    });
+  const fetchData = async () => {
+    const { data: studentData } = await supabase
+      .from('students')
+      .select('*')
+      .eq('archived', false)
+      .order('name', { ascending: true });
+    
+    const { data: recordData } = await supabase
+      .from('reading_records')
+      .select('*')
+      .order('created_at', { ascending: false });
+    
+    setStudents(studentData || []);
+    setRecords(recordData || []);
+  };
 
-    const unsubRecords = onSnapshot(query(collection(db, 'reading_records'), orderBy('created_at', 'desc')), (snapshot) => {
-      setRecords(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    });
+  useEffect(() => {
+    fetchData();
+
+    const studentsChannel = supabase.channel('reading_students').on('postgres_changes', { event: '*', schema: 'public', table: 'students' }, () => fetchData()).subscribe();
+    const recordsChannel = supabase.channel('reading_records').on('postgres_changes', { event: '*', schema: 'public', table: 'reading_records' }, () => fetchData()).subscribe();
 
     return () => {
-      unsubStudents();
-      unsubRecords();
+      supabase.removeChannel(studentsChannel);
+      supabase.removeChannel(recordsChannel);
     };
   }, []);
 
@@ -37,13 +49,16 @@ export default function Reading() {
     const isMahir = category === 'Tinggi' && readingStatus === 'Bacaan Lancar';
     
     try {
-      await addDoc(collection(db, 'reading_records'), {
-        student_id: selectedStudent,
-        category,
-        status: readingStatus,
-        is_mahir: isMahir,
-        created_at: serverTimestamp()
-      });
+      const { error } = await supabase
+        .from('reading_records')
+        .insert([{
+          student_id: selectedStudent,
+          category,
+          status: readingStatus,
+          is_mahir: isMahir
+        }]);
+
+      if (error) throw error;
       setSelectedStudent('');
     } catch (error) {
       console.error("Error saving reading record:", error);

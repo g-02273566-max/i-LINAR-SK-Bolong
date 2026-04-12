@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Check, X, Save, AlertCircle } from 'lucide-react';
 import { SUBJECTS, Student, cn, CLASSES } from '../types';
-import { db } from '../firebase';
-import { collection, addDoc, getDocs, query, where, onSnapshot, serverTimestamp } from 'firebase/firestore';
+import { supabase } from '../supabase';
 
 const SCREENING_ITEMS = {
   BM: [
@@ -37,17 +36,33 @@ export default function Screening() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{type: 'success' | 'error', text: string} | null>(null);
 
-  useEffect(() => {
-    const q = query(collection(db, 'students'), where('archived', '==', false));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const studentList = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Student[];
-      setStudents(studentList);
-    });
+  const fetchStudents = async () => {
+    const { data, error } = await supabase
+      .from('students')
+      .select('*')
+      .eq('archived', false)
+      .order('name', { ascending: true });
+    
+    if (error) {
+      console.error('Error fetching students:', error);
+    } else {
+      setStudents(data || []);
+    }
+  };
 
-    return () => unsubscribe();
+  useEffect(() => {
+    fetchStudents();
+
+    const channel = supabase
+      .channel('students_changes_screening')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'students' }, () => {
+        fetchStudents();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const handleToggle = (index: number) => {
@@ -72,26 +87,30 @@ export default function Screening() {
     
     try {
       // Check for existing screening
-      const q = query(
-        collection(db, 'screenings'), 
-        where('student_id', '==', selectedStudent),
-        where('subject', '==', selectedSubject)
-      );
-      const existing = await getDocs(q);
+      const { data: existing, error: checkError } = await supabase
+        .from('screenings')
+        .select('id')
+        .eq('student_id', selectedStudent)
+        .eq('subject', selectedSubject);
       
-      if (!existing.empty) {
+      if (checkError) throw checkError;
+      
+      if (existing && existing.length > 0) {
         setMessage({ type: 'error', text: 'Saringan sudah wujud untuk murid ini.' });
         setLoading(false);
         return;
       }
 
-      await addDoc(collection(db, 'screenings'), {
-        student_id: selectedStudent,
-        subject: selectedSubject,
-        items: JSON.stringify(results),
-        status,
-        created_at: serverTimestamp()
-      });
+      const { error: insertError } = await supabase
+        .from('screenings')
+        .insert([{
+          student_id: selectedStudent,
+          subject: selectedSubject,
+          items: results,
+          status
+        }]);
+
+      if (insertError) throw insertError;
 
       setMessage({ type: 'success', text: 'Saringan berjaya direkodkan!' });
       setResults(new Array(5).fill(false));

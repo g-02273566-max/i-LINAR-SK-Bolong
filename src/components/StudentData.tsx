@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { UserPlus, Search, Trash2, Edit2, AlertCircle, Check } from 'lucide-react';
 import { CLASSES, Student, cn } from '../types';
-import { db } from '../firebase';
-import { collection, addDoc, getDocs, query, where, updateDoc, doc, onSnapshot } from 'firebase/firestore';
+import { supabase } from '../supabase';
 
 export default function StudentData() {
   const [students, setStudents] = useState<Student[]>([]);
@@ -13,17 +12,33 @@ export default function StudentData() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{type: 'success' | 'error', text: string} | null>(null);
 
-  useEffect(() => {
-    const q = query(collection(db, 'students'), where('archived', '==', false));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const studentList = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Student[];
-      setStudents(studentList);
-    });
+  const fetchStudents = async () => {
+    const { data, error } = await supabase
+      .from('students')
+      .select('*')
+      .eq('archived', false)
+      .order('name', { ascending: true });
+    
+    if (error) {
+      console.error('Error fetching students:', error);
+    } else {
+      setStudents(data || []);
+    }
+  };
 
-    return () => unsubscribe();
+  useEffect(() => {
+    fetchStudents();
+
+    const channel = supabase
+      .channel('students_changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'students' }, () => {
+        fetchStudents();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -32,12 +47,17 @@ export default function StudentData() {
     setLoading(true);
     
     try {
-      await addDoc(collection(db, 'students'), {
-        name: name.toUpperCase(),
-        class: className,
-        gender,
-        archived: false
-      });
+      const { error } = await supabase
+        .from('students')
+        .insert([{
+          name: name.toUpperCase(),
+          class: className,
+          gender,
+          archived: false
+        }]);
+
+      if (error) throw error;
+
       setMessage({ type: 'success', text: 'Murid berjaya ditambah!' });
       setName('');
     } catch (error) {
@@ -50,7 +70,12 @@ export default function StudentData() {
     if (!confirm('Adakah anda pasti mahu memadam murid ini? Rekod penilaian akan diarkibkan.')) return;
     
     try {
-      await updateDoc(doc(db, 'students', id), { archived: true });
+      const { error } = await supabase
+        .from('students')
+        .update({ archived: true })
+        .eq('id', id);
+      
+      if (error) throw error;
     } catch (error) {
       console.error("Error deleting student:", error);
     }

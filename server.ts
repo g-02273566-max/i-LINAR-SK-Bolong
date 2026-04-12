@@ -8,7 +8,7 @@ async function startServer() {
   const PORT = 3000;
 
   // --- API ROUTES ---
-  // Note: Most data operations are now handled client-side via Firebase SDK.
+  // Note: Most data operations are now handled client-side via Supabase.
   // We keep the server for serving the SPA and potential future server-side logic.
 
   app.get("/api/health", (req, res) => {
