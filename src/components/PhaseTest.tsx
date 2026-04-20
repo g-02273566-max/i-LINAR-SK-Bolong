@@ -160,14 +160,18 @@ export default function PhaseTest() {
       if (testError) throw testError;
 
       // Audit Log
-      await supabase.from('audit_logs').insert([{
-        student_id: selectedStudent,
-        table_name: 'phase_tests',
-        action: 'UPSERT',
-        old_data: null,
-        new_data: { subject: selectedSubject, phase: selectedPhase, status, items: results },
-        description: `Kemaskini/Simpan Ujian Pelepasan Fasa ${selectedPhase} untuk ${selectedSubject}`
-      }]).select().single().catch(() => null);
+      try {
+        await supabase.from('audit_logs').insert([{
+          student_id: selectedStudent,
+          table_name: 'phase_tests',
+          action: 'UPSERT',
+          old_data: null,
+          new_data: { subject: selectedSubject, phase: selectedPhase, status, items: results },
+          description: `Kemaskini/Simpan Ujian Pelepasan Fasa ${selectedPhase} untuk ${selectedSubject}`
+        }]);
+      } catch (e) {
+        console.warn('Audit log failed:', e);
+      }
 
       setMessage({ type: 'success', text: 'Ujian Pelepasan berjaya direkodkan / dikemaskini!' });
     } catch (error: any) {

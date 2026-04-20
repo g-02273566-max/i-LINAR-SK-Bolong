@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Filter, Calendar, User, BookOpen, ChevronRight, ArrowLeft, TrendingUp, CheckCircle, AlertCircle } from 'lucide-react';
-import { CLASSES, Student, Screening, PhaseTest, cn } from '../types';
+import { Search, Filter, Calendar, User, BookOpen, ChevronRight, ArrowLeft, TrendingUp, CheckCircle, AlertCircle, FileWarning, ClipboardList } from 'lucide-react';
+import { CLASSES, Student, Screening, PhaseTest, cn, SUBJECTS, PHASES } from '../types';
 import { supabase } from '../supabase';
 
 export default function Records() {
@@ -11,6 +11,7 @@ export default function Records() {
   const [selectedClass, setSelectedClass] = useState('Semua');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
+  const [showMissingReport, setShowMissingReport] = useState(false);
 
   const fetchData = async () => {
     const { data: studentData } = await supabase
@@ -77,6 +78,109 @@ export default function Records() {
     if (status.includes('PENGGAYAAN')) return `${base} bg-emerald-100 text-emerald-700 border border-emerald-200`;
     return `${base} bg-slate-100 text-slate-500`;
   };
+
+  if (showMissingReport) {
+    const missingData = students
+      .filter(s => selectedClass === 'Semua' || s.class === selectedClass)
+      .map(student => {
+        const missingItems: { subject: string, types: string[] }[] = [];
+        
+        ['BM', 'EN', 'NUM'].forEach(sub => {
+          const types: string[] = [];
+          
+          // Check screening
+          const hasScreening = screenings.some(sc => sc.student_id === student.id && sc.subject === sub);
+          if (!hasScreening) types.push('Saringan');
+          
+          // Check phases
+          [1, 2, 3, 4].forEach(p => {
+            const hasPhase = phaseTests.some(pt => pt.student_id === student.id && pt.subject === sub && pt.phase === p);
+            if (!hasPhase) types.push(`Fasa ${p}`);
+          });
+
+          if (types.length > 0) {
+            missingItems.push({ subject: sub, types });
+          }
+        });
+
+        return { student, missingItems };
+      })
+      .filter(item => item.missingItems.length > 0);
+
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <button 
+            onClick={() => setShowMissingReport(false)}
+            className="flex items-center gap-2 text-slate-500 hover:text-slate-900 transition-colors font-bold text-sm"
+          >
+            <ArrowLeft size={18} /> Kembali ke Rekod
+          </button>
+          <div className="flex items-center gap-2 px-4 py-2 bg-red-50 text-red-700 rounded-xl border border-red-100 text-sm font-bold">
+            <AlertCircle size={16} />
+            {missingData.length} Murid Dengan Data Cicir ({selectedClass})
+          </div>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="p-6 border-b border-slate-100">
+            <h3 className="text-lg font-bold text-slate-900">Laporan Keciciran Pengisian Data</h3>
+            <p className="text-sm text-slate-500">Senarai murid yang belum melengkapkan Ujian Saringan atau Ujian Pelepasan (F1-F4)</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-200">
+                  <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-widest">Murid & Kelas</th>
+                  <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-widest">Subjek</th>
+                  <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-widest">Ujian Yang Belum Diisi</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {missingData.map(({ student, missingItems }) => (
+                  <tr key={student.id} className="hover:bg-slate-50 transition-colors">
+                    <td className="px-6 py-4 align-top">
+                      <div className="font-bold text-slate-900 text-sm">{student.name}</div>
+                      <div className="text-xs text-slate-500">{student.class}</div>
+                    </td>
+                    <td className="px-6 py-4 align-top">
+                      <div className="space-y-6">
+                        {missingItems.map(m => (
+                          <div key={m.subject} className="space-y-2">
+                            <span className="text-[10px] font-black bg-slate-900 text-white px-2 py-0.5 rounded">{m.subject}</span>
+                            <div className="flex flex-wrap gap-1">
+                              {m.types.map(t => (
+                                <span key={t} className="text-[10px] font-bold px-2 py-0.5 bg-red-50 text-red-600 border border-red-100 rounded">
+                                  {t}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 align-top">
+                      <div className="flex items-center gap-2 text-xs text-red-500 font-medium mt-1">
+                        <FileWarning size={14} />
+                        Perlu Tindakan Segera
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {missingData.length === 0 && (
+                  <tr>
+                    <td colSpan={3} className="px-6 py-12 text-center text-slate-400 italic">
+                      Semua data murid bagi subjek dan fasa terpilih telah lengkap. Syabas!
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (selectedStudentId) {
     const student = students.find(s => s.id === selectedStudentId);
@@ -204,6 +308,13 @@ export default function Records() {
         </div>
         
         <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => setShowMissingReport(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 hover:border-red-200 hover:bg-red-50 hover:text-red-600 rounded-xl text-sm font-bold transition-all"
+          >
+            <ClipboardList size={18} />
+            Laporan Keciciran
+          </button>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
             <input 

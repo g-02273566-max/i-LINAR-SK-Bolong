@@ -135,14 +135,18 @@ export default function Screening() {
       if (screeningError) throw screeningError;
 
       // Audit Log
-      await supabase.from('audit_logs').insert([{
-        student_id: selectedStudent,
-        table_name: 'screenings',
-        action: 'UPSERT',
-        old_data: null, // In a real production app, we might diff here
-        new_data: { subject: selectedSubject, status, items: results },
-        description: `Kemaskini/Simpan Ujian Saringan untuk ${selectedSubject}`
-      }]).select().single().catch(() => null); // Silent fail for audit logs to not block main operation
+      try {
+        await supabase.from('audit_logs').insert([{
+          student_id: selectedStudent,
+          table_name: 'screenings',
+          action: 'UPSERT',
+          old_data: null,
+          new_data: { subject: selectedSubject, status, items: results },
+          description: `Kemaskini/Simpan Ujian Saringan untuk ${selectedSubject}`
+        }]);
+      } catch (e) {
+        console.warn('Audit log failed:', e);
+      }
 
       setMessage({ type: 'success', text: 'Saringan berjaya direkodkan / dikemaskini!' });
     } catch (error: any) {
