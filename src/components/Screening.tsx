@@ -34,6 +34,7 @@ export default function Screening() {
   const [selectedSubject, setSelectedSubject] = useState('BM');
   const [results, setResults] = useState<boolean[]>(new Array(5).fill(false));
   const [loading, setLoading] = useState(false);
+  const [fetching, setFetching] = useState(false);
   const [message, setMessage] = useState<{type: 'success' | 'error', text: string} | null>(null);
 
   const fetchStudents = async () => {
@@ -50,6 +51,33 @@ export default function Screening() {
     }
   };
 
+  const fetchExistingScreening = async () => {
+    if (!selectedStudent || !selectedSubject) return;
+    
+    setFetching(true);
+    try {
+      const { data, error } = await supabase
+        .from('screenings')
+        .select('*')
+        .eq('student_id', selectedStudent)
+        .eq('subject', selectedSubject)
+        .single();
+
+      if (data) {
+        setResults(data.items);
+        setMessage({ type: 'success', text: 'Data saringan sedia ada telah dimuatkan. Anda boleh mengemaskini (overwrite) data ini.' });
+      } else {
+        setResults(new Array(5).fill(false));
+        setMessage(null);
+      }
+    } catch (error) {
+      // It's fine if no data is found
+      setResults(new Array(5).fill(false));
+      setMessage(null);
+    }
+    setFetching(false);
+  };
+
   useEffect(() => {
     fetchStudents();
 
@@ -64,6 +92,10 @@ export default function Screening() {
       supabase.removeChannel(channel);
     };
   }, []);
+
+  useEffect(() => {
+    fetchExistingScreening();
+  }, [selectedStudent, selectedSubject]);
 
   const handleToggle = (index: number) => {
     const newResults = [...results];
@@ -86,35 +118,33 @@ export default function Screening() {
     const status = calculateStatus();
     
     try {
-      // Check for existing screening
-      const { data: existing, error: checkError } = await supabase
+      // Record to screenings table (Upsert)
+      const { data: screeningData, error: screeningError } = await supabase
         .from('screenings')
-        .select('id')
-        .eq('student_id', selectedStudent)
-        .eq('subject', selectedSubject);
-      
-      if (checkError) throw checkError;
-      
-      if (existing && existing.length > 0) {
-        setMessage({ type: 'error', text: 'Saringan sudah wujud untuk murid ini.' });
-        setLoading(false);
-        return;
-      }
-
-      const { error: insertError } = await supabase
-        .from('screenings')
-        .insert([{
+        .upsert({
           student_id: selectedStudent,
           subject: selectedSubject,
           items: results,
-          status
-        }]);
+          status,
+          updated_at: new Date().toISOString()
+        }, {
+          onConflict: 'student_id,subject'
+        })
+        .select();
 
-      if (insertError) throw insertError;
+      if (screeningError) throw screeningError;
 
-      setMessage({ type: 'success', text: 'Saringan berjaya direkodkan!' });
-      setResults(new Array(5).fill(false));
-      setSelectedStudent('');
+      // Audit Log
+      await supabase.from('audit_logs').insert([{
+        student_id: selectedStudent,
+        table_name: 'screenings',
+        action: 'UPSERT',
+        old_data: null, // In a real production app, we might diff here
+        new_data: { subject: selectedSubject, status, items: results },
+        description: `Kemaskini/Simpan Ujian Saringan untuk ${selectedSubject}`
+      }]).select().single().catch(() => null); // Silent fail for audit logs to not block main operation
+
+      setMessage({ type: 'success', text: 'Saringan berjaya direkodkan / dikemaskini!' });
     } catch (error: any) {
       console.error('Error saving screening:', error);
       setMessage({ type: 'error', text: `Gagal merekod saringan: ${error.message || 'Ralat tidak diketahui'}` });
@@ -195,7 +225,15 @@ export default function Screening() {
           </div>
         </div>
 
-        <div className="space-y-4">
+        <div className="space-y-4 relative">
+          {fetching && (
+            <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10 flex items-center justify-center rounded-xl">
+              <div className="flex items-center gap-2 text-slate-500 font-medium">
+                <div className="w-4 h-4 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin" />
+                Menyemak rekod sedia ada...
+              </div>
+            </div>
+          )}
           <label className="text-sm font-bold text-slate-700 uppercase tracking-wider">Item Penilaian</label>
           <div className="space-y-2">
             {currentItems.map((item, idx) => (

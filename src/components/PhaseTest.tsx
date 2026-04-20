@@ -31,6 +31,7 @@ export default function PhaseTest() {
     Asas: [], Sederhana: [], Tinggi: []
   });
   const [loading, setLoading] = useState(false);
+  const [fetching, setFetching] = useState(false);
   const [message, setMessage] = useState<{type: 'success' | 'error', text: string} | null>(null);
 
   const fetchStudents = async () => {
@@ -45,6 +46,42 @@ export default function PhaseTest() {
     } else {
       setStudents(data || []);
     }
+  };
+
+  const fetchExistingTest = async () => {
+    if (!selectedStudent || !selectedSubject || !selectedPhase) return;
+    
+    setFetching(true);
+    try {
+      const { data, error } = await supabase
+        .from('phase_tests')
+        .select('*')
+        .eq('student_id', selectedStudent)
+        .eq('subject', selectedSubject)
+        .eq('phase', selectedPhase)
+        .single();
+
+      if (data) {
+        setResults(data.items);
+        setMessage({ type: 'success', text: 'Data ujian fasa sedia ada telah dimuatkan. Anda boleh mengemaskini (overwrite) data ini.' });
+      } else {
+        resetResults();
+        setMessage(null);
+      }
+    } catch (error) {
+      resetResults();
+      setMessage(null);
+    }
+    setFetching(false);
+  };
+
+  const resetResults = () => {
+    const items = TEST_ITEMS[selectedSubject as keyof typeof TEST_ITEMS];
+    setResults({
+      Asas: new Array(items.Asas.length).fill(false),
+      Sederhana: new Array(items.Sederhana.length).fill(false),
+      Tinggi: new Array(items.Tinggi.length).fill(false)
+    });
   };
 
   useEffect(() => {
@@ -63,13 +100,12 @@ export default function PhaseTest() {
   }, []);
 
   useEffect(() => {
-    const items = TEST_ITEMS[selectedSubject as keyof typeof TEST_ITEMS];
-    setResults({
-      Asas: new Array(items.Asas.length).fill(false),
-      Sederhana: new Array(items.Sederhana.length).fill(false),
-      Tinggi: new Array(items.Tinggi.length).fill(false)
-    });
+    resetResults();
   }, [selectedSubject]);
+
+  useEffect(() => {
+    fetchExistingTest();
+  }, [selectedStudent, selectedSubject, selectedPhase]);
 
   const handleToggle = (level: string, idx: number) => {
     setResults(prev => ({
@@ -108,20 +144,32 @@ export default function PhaseTest() {
     const status = calculateStatus();
     
     try {
-      const { error } = await supabase
+      const { error: testError } = await supabase
         .from('phase_tests')
-        .insert([{
+        .upsert({
           student_id: selectedStudent,
           subject: selectedSubject,
           phase: selectedPhase,
           items: results,
-          status
-        }]);
+          status,
+          updated_at: new Date().toISOString()
+        }, {
+          onConflict: 'student_id,subject,phase'
+        });
 
-      if (error) throw error;
+      if (testError) throw testError;
 
-      setMessage({ type: 'success', text: 'Ujian Pelepasan berjaya direkodkan!' });
-      setSelectedStudent('');
+      // Audit Log
+      await supabase.from('audit_logs').insert([{
+        student_id: selectedStudent,
+        table_name: 'phase_tests',
+        action: 'UPSERT',
+        old_data: null,
+        new_data: { subject: selectedSubject, phase: selectedPhase, status, items: results },
+        description: `Kemaskini/Simpan Ujian Pelepasan Fasa ${selectedPhase} untuk ${selectedSubject}`
+      }]).select().single().catch(() => null);
+
+      setMessage({ type: 'success', text: 'Ujian Pelepasan berjaya direkodkan / dikemaskini!' });
     } catch (error: any) {
       console.error('Error saving phase test:', error);
       setMessage({ type: 'error', text: `Gagal merekod ujian: ${error.message || 'Ralat tidak diketahui'}` });
@@ -205,7 +253,15 @@ export default function PhaseTest() {
           </div>
         </div>
 
-        <div className="space-y-8">
+        <div className="space-y-8 relative">
+          {fetching && (
+            <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10 flex items-center justify-center rounded-xl">
+              <div className="flex items-center gap-2 text-slate-500 font-medium">
+                <div className="w-4 h-4 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin" />
+                Menyemak rekod sedia ada...
+              </div>
+            </div>
+          )}
           {Object.entries(currentItems).map(([level, items]) => (
             <div key={level} className="space-y-3">
               <h4 className="text-sm font-bold text-slate-900 flex items-center gap-2">

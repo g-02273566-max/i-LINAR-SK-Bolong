@@ -34,11 +34,15 @@ export default function Dashboard() {
     
     // Calculate latest status for EACH subject for EACH student
     const subjects = ['BM', 'EN', 'NUM'];
-    const subjectStatuses: any[] = [];
-    const interventionStudents: any[] = [];
+    const subjectSummaries: Record<string, Record<string, number>> = {
+      BM: { Intervensi: 0, Pengukuhan: 0, Penggayaan: 0 },
+      EN: { Intervensi: 0, Pengukuhan: 0, Penggayaan: 0 },
+      NUM: { Intervensi: 0, Pengukuhan: 0, Penggayaan: 0 },
+    };
+    const tripleInterventionStudents: any[] = [];
 
     studentList.forEach(s => {
-      let studentHasIntervention = false;
+      let interventionCount = 0;
       const studentLatestStatuses: Record<string, string> = {};
 
       subjects.forEach(sub => {
@@ -55,53 +59,65 @@ export default function Dashboard() {
         }
 
         if (status) {
-          subjectStatuses.push(status);
           studentLatestStatuses[sub] = status;
-          if (status.includes('INTERVENSI')) studentHasIntervention = true;
+          const upStatus = status.toUpperCase();
+          if (upStatus.includes('INTERVENSI')) {
+            subjectSummaries[sub].Intervensi++;
+            interventionCount++;
+          }
+          else if (upStatus.includes('PENGUKUHAN')) subjectSummaries[sub].Pengukuhan++;
+          else if (upStatus.includes('PENGGAYAAN')) subjectSummaries[sub].Penggayaan++;
         }
       });
 
-      if (studentHasIntervention) {
-        interventionStudents.push({
+      // User requested: all three subjects must be intervention
+      if (interventionCount === 3) {
+        tripleInterventionStudents.push({
           ...s,
           statuses: studentLatestStatuses
         });
       }
     });
 
-    const summaryCounts: Record<string, number> = { Intervensi: 0, Pengukuhan: 0, Penggayaan: 0 };
-    subjectStatuses.forEach(status => {
-      if (status.includes('INTERVENSI')) summaryCounts.Intervensi++;
-      else if (status.includes('PENGUKUHAN')) summaryCounts.Pengukuhan++;
-      else if (status.includes('PENGGAYAAN')) summaryCounts.Penggayaan++;
-    });
-
     setSummary({
       totalStudents: studentList.length,
-      summary: summaryCounts,
-      interventionList: interventionStudents.slice(0, 10) // Show top 10 for attention
+      subjectSummaries,
+      interventionList: tripleInterventionStudents.slice(0, 10)
     });
 
     const phases = ['Saringan', 'Fasa 1', 'Fasa 2', 'Fasa 3', 'Fasa 4'];
     
-    // Overall Phase Analysis
-    const overallPhaseAnalysis = phases.map((phaseName, idx) => {
-      const counts: any = { name: phaseName, Intervensi: 0, Pengukuhan: 0, Penggayaan: 0 };
-      if (idx === 0) {
-        filteredScreenings.forEach(s => {
-          if (s.status.includes('Intervensi')) counts.Intervensi++;
-          else if (s.status.includes('Pengukuhan')) counts.Pengukuhan++;
-          else if (s.status.includes('Penggayaan')) counts.Penggayaan++;
-        });
+    // Helper to get latest status per student+subject for a specific phase
+    const getPhaseCounts = (pIdx: number, subjectFilter?: string) => {
+      const counts = { Intervensi: 0, Pengukuhan: 0, Penggayaan: 0 };
+      const latestMap = new Map<string, string>();
+
+      if (pIdx === 0) {
+        filteredScreenings
+          .filter(s => !subjectFilter || s.subject === subjectFilter)
+          .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+          .forEach(s => latestMap.set(`${s.student_id}_${s.subject}`, s.status));
       } else {
-        filteredPhaseTests.filter(pt => pt.phase === idx).forEach(pt => {
-          if (pt.status.includes('INTERVENSI')) counts.Intervensi++;
-          else if (pt.status.includes('PENGUKUHAN')) counts.Pengukuhan++;
-          else if (pt.status.includes('PENGGAYAAN')) counts.Penggayaan++;
-        });
+        filteredPhaseTests
+          .filter(pt => pt.phase === pIdx && (!subjectFilter || pt.subject === subjectFilter))
+          .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+          .forEach(pt => latestMap.set(`${pt.student_id}_${pt.subject}`, pt.status));
       }
+
+      latestMap.forEach(status => {
+        const upStatus = status.toUpperCase();
+        if (upStatus.includes('INTERVENSI')) counts.Intervensi++;
+        else if (upStatus.includes('PENGUKUHAN')) counts.Pengukuhan++;
+        else if (upStatus.includes('PENGGAYAAN')) counts.Penggayaan++;
+      });
       return counts;
-    });
+    };
+
+    // Overall Phase Analysis
+    const overallPhaseAnalysis = phases.map((phaseName, idx) => ({
+      name: phaseName,
+      ...getPhaseCounts(idx)
+    }));
     setPhaseData(overallPhaseAnalysis);
 
     // Subject-Specific Analysis
@@ -109,23 +125,10 @@ export default function Dashboard() {
     const subjectsData: Record<string, any[]> = {};
 
     subjectsList.forEach(subject => {
-      subjectsData[subject] = phases.map((phaseName, idx) => {
-        const counts: any = { name: phaseName, Intervensi: 0, Pengukuhan: 0, Penggayaan: 0 };
-        if (idx === 0) {
-          filteredScreenings.filter(s => s.subject === subject).forEach(s => {
-            if (s.status.includes('Intervensi')) counts.Intervensi++;
-            else if (s.status.includes('Pengukuhan')) counts.Pengukuhan++;
-            else if (s.status.includes('Penggayaan')) counts.Penggayaan++;
-          });
-        } else {
-          filteredPhaseTests.filter(pt => pt.phase === idx && pt.subject === subject).forEach(pt => {
-            if (pt.status.includes('INTERVENSI')) counts.Intervensi++;
-            else if (pt.status.includes('PENGUKUHAN')) counts.Pengukuhan++;
-            else if (pt.status.includes('PENGGAYAAN')) counts.Penggayaan++;
-          });
-        }
-        return counts;
-      });
+      subjectsData[subject] = phases.map((phaseName, idx) => ({
+        name: phaseName,
+        ...getPhaseCounts(idx, subject)
+      }));
     });
     setSubjectData(subjectsData);
     setLoading(false);
@@ -146,19 +149,6 @@ export default function Dashboard() {
   }, [selectedClass]);
 
   if (loading) return <div className="flex justify-center items-center h-64">Memuatkan data...</div>;
-
-  const pieData = [
-    { name: 'Intervensi', value: summary?.summary?.Intervensi || 0, color: '#ef4444' },
-    { name: 'Pengukuhan', value: summary?.summary?.Pengukuhan || 0, color: '#f59e0b' },
-    { name: 'Penggayaan', value: summary?.summary?.Penggayaan || 0, color: '#10b981' },
-  ];
-
-  const stats = [
-    { label: 'Jumlah Murid', value: summary?.totalStudents || 0, icon: Users, color: 'bg-blue-500' },
-    { label: 'Intervensi', value: summary?.summary?.Intervensi || 0, icon: AlertCircle, color: 'bg-red-500' },
-    { label: 'Pengukuhan', value: summary?.summary?.Pengukuhan || 0, icon: TrendingUp, color: 'bg-amber-500' },
-    { label: 'Penggayaan', value: summary?.summary?.Penggayaan || 0, icon: CheckCircle, color: 'bg-emerald-500' },
-  ];
 
   return (
     <div className="space-y-8">
@@ -181,19 +171,37 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {stats.map((stat, idx) => (
-          <div key={idx} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4">
-            <div className={`${stat.color} p-3 rounded-xl text-white`}>
-              <stat.icon size={24} />
+      {/* Subject Summaries */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {[
+          { id: 'BM', title: 'Literasi BM', color: 'blue' },
+          { id: 'EN', title: 'English Literacy', color: 'indigo' },
+          { id: 'NUM', title: 'Numerasi', color: 'violet' }
+        ].map((sub) => {
+          const data = summary?.subjectSummaries[sub.id] || { Intervensi: 0, Pengukuhan: 0, Penggayaan: 0 };
+          return (
+            <div key={sub.id} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="font-bold text-slate-900">{sub.title}</h3>
+                <span className="text-xs font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded">{summary?.totalStudents} Murid</span>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <div className="p-3 rounded-xl bg-red-50 border border-red-100 text-center">
+                  <p className="text-[10px] font-bold text-red-500 uppercase">INT</p>
+                  <p className="text-lg font-bold text-red-700">{data.Intervensi}</p>
+                </div>
+                <div className="p-3 rounded-xl bg-amber-50 border border-amber-100 text-center">
+                  <p className="text-[10px] font-bold text-amber-500 uppercase">KUK</p>
+                  <p className="text-lg font-bold text-amber-700">{data.Pengukuhan}</p>
+                </div>
+                <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-100 text-center">
+                  <p className="text-[10px] font-bold text-emerald-500 uppercase">GAYA</p>
+                  <p className="text-lg font-bold text-emerald-700">{data.Penggayaan}</p>
+                </div>
+              </div>
             </div>
-            <div>
-              <p className="text-sm font-medium text-slate-500">{stat.label}</p>
-              <p className="text-2xl font-bold text-slate-900">{stat.value}</p>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Phase Analysis Chart */}
@@ -253,58 +261,77 @@ export default function Dashboard() {
         ))}
       </div>
 
-      {/* Charts Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-          <h3 className="text-lg font-bold text-slate-900 mb-6">Status Semasa (%)</h3>
-          <div className="h-80">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={pieData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={100}
-                  paddingAngle={5}
-                  dataKey="value"
-                >
-                  {pieData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip />
-                <Legend verticalAlign="bottom" height={36}/>
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
+      {/* Charts Grid - Subject Specific */}
+      <div className="space-y-8">
+        {[
+          { id: 'BM', title: 'Literasi Bahasa Melayu' },
+          { id: 'EN', title: 'English Literacy' },
+          { id: 'NUM', title: 'Numerasi' }
+        ].map((sub) => {
+          const data = summary?.subjectSummaries[sub.id] || { Intervensi: 0, Pengukuhan: 0, Penggayaan: 0 };
+          const chartData = [
+            { name: 'Intervensi', value: data.Intervensi, color: '#ef4444' },
+            { name: 'Pengukuhan', value: data.Pengukuhan, color: '#f59e0b' },
+            { name: 'Penggayaan', value: data.Penggayaan, color: '#10b981' },
+          ];
 
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-          <h3 className="text-lg font-bold text-slate-900 mb-6">Pencapaian Terkini Mengikut Kumpulan</h3>
-          <div className="h-80">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={pieData}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="name" />
-                <YAxis />
-                <Tooltip />
-                <Bar dataKey="value" radius={[4, 4, 0, 0]}>
-                  {pieData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
+          return (
+            <div key={sub.id} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+              <h3 className="text-xl font-bold text-slate-900 mb-6 border-b border-slate-100 pb-4">{sub.title}</h3>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div>
+                  <h4 className="text-sm font-bold text-slate-500 mb-4 uppercase tracking-wider">Status Semasa (%)</h4>
+                  <div className="h-64">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={chartData}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={40}
+                          outerRadius={80}
+                          paddingAngle={5}
+                          dataKey="value"
+                        >
+                          {chartData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.color} />
+                          ))}
+                        </Pie>
+                        <Tooltip />
+                        <Legend verticalAlign="bottom" height={36}/>
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-slate-500 mb-4 uppercase tracking-wider">Pencapaian Terkini</h4>
+                  <div className="h-64">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={chartData}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                        <XAxis dataKey="name" />
+                        <YAxis />
+                        <Tooltip />
+                        <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                          {chartData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.color} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       {/* Attention List */}
       <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
         <h3 className="text-lg font-bold text-slate-900 mb-6 flex items-center gap-2">
           <AlertCircle size={20} className="text-red-500" />
-          Senarai Murid Perlu Perhatian (Kumpulan Intervensi Terkini)
+          Senarai Murid Perlu Perhatian (Intervensi di Ketiga-tiga Ujian)
         </h3>
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
