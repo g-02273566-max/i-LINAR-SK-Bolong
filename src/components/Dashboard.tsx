@@ -11,6 +11,9 @@ export default function Dashboard() {
   const [summary, setSummary] = useState<any>(null);
   const [phaseData, setPhaseData] = useState<any[]>([]);
   const [subjectData, setSubjectData] = useState<Record<string, any[]>>({ BM: [], EN: [], NUM: [] });
+  const [classAnalysisData, setClassAnalysisData] = useState<any[]>([]);
+  const [selectedPhaseForClass, setSelectedPhaseForClass] = useState(0);
+  const [selectedSubjectForClass, setSelectedSubjectForClass] = useState('BM');
   const [selectedClass, setSelectedClass] = useState('Semua');
   const [loading, setLoading] = useState(true);
 
@@ -18,9 +21,6 @@ export default function Dashboard() {
     setLoading(true);
     
     let studentQuery = supabase.from('students').select('*').eq('archived', false);
-    if (selectedClass !== 'Semua') {
-      studentQuery = studentQuery.eq('class', selectedClass);
-    }
     
     const { data: studentList } = await studentQuery;
     const { data: screeningList } = await supabase.from('screenings').select('*');
@@ -28,12 +28,17 @@ export default function Dashboard() {
     
     if (!studentList) return;
 
-    const studentIds = new Set(studentList.map(s => s.id));
-    const filteredScreenings = (screeningList || []).filter(s => studentIds.has(s.student_id));
-    const filteredPhaseTests = (phaseTestList || []).filter(s => studentIds.has(s.student_id));
+    // Filter students for the main dashboard class filter
+    const dashboardStudents = selectedClass === 'Semua' 
+      ? studentList 
+      : studentList.filter(s => s.class === selectedClass);
+
+    const studentIdsForDashboard = new Set(dashboardStudents.map(s => s.id));
+    const filteredScreenings = (screeningList || []).filter(s => studentIdsForDashboard.has(s.student_id));
+    const filteredPhaseTests = (phaseTestList || []).filter(s => studentIdsForDashboard.has(s.student_id));
     
-    // Calculate latest status for EACH subject for EACH student
-    const subjects = ['BM', 'EN', 'NUM'];
+    // Calculate latest status for EACH subject for EACH student (Respecting Class Filter)
+    const subjectsList = ['BM', 'EN', 'NUM'];
     const subjectSummaries: Record<string, Record<string, number>> = {
       BM: { Intervensi: 0, Pengukuhan: 0, Penggayaan: 0 },
       EN: { Intervensi: 0, Pengukuhan: 0, Penggayaan: 0 },
@@ -41,11 +46,11 @@ export default function Dashboard() {
     };
     const tripleInterventionStudents: any[] = [];
 
-    studentList.forEach(s => {
+    dashboardStudents.forEach(s => {
       let interventionCount = 0;
       const studentLatestStatuses: Record<string, string> = {};
 
-      subjects.forEach(sub => {
+      subjectsList.forEach(sub => {
         const latestTest = filteredPhaseTests
           .filter(pt => pt.student_id === s.id && pt.subject === sub)
           .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
@@ -70,7 +75,6 @@ export default function Dashboard() {
         }
       });
 
-      // User requested: all three subjects must be intervention
       if (interventionCount === 3) {
         tripleInterventionStudents.push({
           ...s,
@@ -80,7 +84,7 @@ export default function Dashboard() {
     });
 
     setSummary({
-      totalStudents: studentList.length,
+      totalStudents: dashboardStudents.length,
       subjectSummaries,
       interventionList: tripleInterventionStudents.slice(0, 10)
     });
@@ -88,18 +92,25 @@ export default function Dashboard() {
     const phases = ['Saringan', 'Fasa 1', 'Fasa 2', 'Fasa 3', 'Fasa 4'];
     
     // Helper to get latest status per student+subject for a specific phase
-    const getPhaseCounts = (pIdx: number, subjectFilter?: string) => {
+    const getPhaseCounts = (pIdx: number, subjectFilter?: string, classFilter?: string) => {
       const counts = { Intervensi: 0, Pengukuhan: 0, Penggayaan: 0 };
       const latestMap = new Map<string, string>();
+      
+      // Filter students by class if provided
+      const relevantStudents = classFilter && classFilter !== 'Semua'
+        ? studentList.filter(s => s.class === classFilter)
+        : dashboardStudents;
+      
+      const relevantStudentIds = new Set(relevantStudents.map(s => s.id));
 
       if (pIdx === 0) {
-        filteredScreenings
-          .filter(s => !subjectFilter || s.subject === subjectFilter)
+        (screeningList || [])
+          .filter(s => relevantStudentIds.has(s.student_id) && (!subjectFilter || s.subject === subjectFilter))
           .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
           .forEach(s => latestMap.set(`${s.student_id}_${s.subject}`, s.status));
       } else {
-        filteredPhaseTests
-          .filter(pt => pt.phase === pIdx && (!subjectFilter || pt.subject === subjectFilter))
+        (phaseTestList || [])
+          .filter(pt => relevantStudentIds.has(pt.student_id) && pt.phase === pIdx && (!subjectFilter || pt.subject === subjectFilter))
           .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
           .forEach(pt => latestMap.set(`${pt.student_id}_${pt.subject}`, pt.status));
       }
@@ -121,22 +132,30 @@ export default function Dashboard() {
     setPhaseData(overallPhaseAnalysis);
 
     // Subject-Specific Analysis
-    const subjectsList = ['BM', 'EN', 'NUM'];
-    const subjectsData: Record<string, any[]> = {};
-
+    const subjectsDataMap: Record<string, any[]> = {};
     subjectsList.forEach(subject => {
-      subjectsData[subject] = phases.map((phaseName, idx) => ({
+      subjectsDataMap[subject] = phases.map((phaseName, idx) => ({
         name: phaseName,
         ...getPhaseCounts(idx, subject)
       }));
     });
-    setSubjectData(subjectsData);
+    setSubjectData(subjectsDataMap);
+
+    // Class breakdown for the selected class analysis settings
+    const classAnalysis = CLASSES.map(c => ({
+      name: c,
+      ...getPhaseCounts(selectedPhaseForClass, selectedSubjectForClass, c)
+    }));
+    setClassAnalysisData(classAnalysis);
+
     setLoading(false);
   };
 
   useEffect(() => {
     fetchData();
+  }, [selectedClass, selectedPhaseForClass, selectedSubjectForClass]);
 
+  useEffect(() => {
     const studentsChannel = supabase.channel('dashboard_students').on('postgres_changes', { event: '*', schema: 'public', table: 'students' }, () => fetchData()).subscribe();
     const screeningsChannel = supabase.channel('dashboard_screenings').on('postgres_changes', { event: '*', schema: 'public', table: 'screenings' }, () => fetchData()).subscribe();
     const testsChannel = supabase.channel('dashboard_tests').on('postgres_changes', { event: '*', schema: 'public', table: 'phase_tests' }, () => fetchData()).subscribe();
@@ -146,7 +165,7 @@ export default function Dashboard() {
       supabase.removeChannel(screeningsChannel);
       supabase.removeChannel(testsChannel);
     };
-  }, [selectedClass]);
+  }, []);
 
   if (loading) return <div className="flex justify-center items-center h-64">Memuatkan data...</div>;
 
@@ -204,7 +223,7 @@ export default function Dashboard() {
         })}
       </div>
 
-      {/* Phase Analysis Chart */}
+      {/* Overall Phase Analysis Chart */}
       <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
         <div className="flex items-center justify-between mb-6">
           <h3 className="text-lg font-bold text-slate-900">Analisis Keberkesanan Program (Keseluruhan)</h3>
@@ -228,6 +247,55 @@ export default function Dashboard() {
               <Bar dataKey="Intervensi" stackId="a" fill="#ef4444" radius={[0, 0, 0, 0]} />
               <Bar dataKey="Pengukuhan" stackId="a" fill="#f59e0b" radius={[0, 0, 0, 0]} />
               <Bar dataKey="Penggayaan" stackId="a" fill="#10b981" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* Class Analysis Breakdown */}
+      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+          <div>
+            <h3 className="text-lg font-bold text-slate-900">Analisis Penguasaan Mengikut Kelas</h3>
+            <p className="text-xs text-slate-500 mt-1">Gunakan kawalan di bawah untuk menapis graf mengikut ujian dan fasa</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <select 
+              value={selectedPhaseForClass}
+              onChange={(e) => setSelectedPhaseForClass(Number(e.target.value))}
+              className="text-xs font-bold border-slate-200 rounded-lg px-3 py-1.5 bg-slate-50"
+            >
+              <option value={0}>Ujian Saringan</option>
+              <option value={1}>Fasa 1</option>
+              <option value={2}>Fasa 2</option>
+              <option value={3}>Fasa 3</option>
+              <option value={4}>Fasa 4</option>
+            </select>
+            <select 
+              value={selectedSubjectForClass}
+              onChange={(e) => setSelectedSubjectForClass(e.target.value)}
+              className="text-xs font-bold border-slate-200 rounded-lg px-3 py-1.5 bg-slate-50"
+            >
+              <option value="BM">Literasi BM</option>
+              <option value="EN">English Literacy</option>
+              <option value="NUM">Numerasi</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="h-[400px]">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={classAnalysisData} layout="vertical" margin={{ left: 20 }}>
+              <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} />
+              <XAxis type="number" />
+              <YAxis dataKey="name" type="category" width={100} fontSize={12} fontWeight="bold" />
+              <Tooltip 
+                contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+              />
+              <Legend verticalAlign="top" align="right" />
+              <Bar dataKey="Intervensi" stackId="a" fill="#ef4444" radius={[0, 0, 0, 0]} />
+              <Bar dataKey="Pengukuhan" stackId="a" fill="#f59e0b" radius={[0, 0, 0, 0]} />
+              <Bar dataKey="Penggayaan" stackId="a" fill="#10b981" radius={[0, 4, 4, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
