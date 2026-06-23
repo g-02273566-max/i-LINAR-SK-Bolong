@@ -3,23 +3,87 @@ import { Check, X, Save, GraduationCap, AlertCircle } from 'lucide-react';
 import { SUBJECTS, PHASES, Student, cn, CLASSES } from '../types';
 import { supabase } from '../supabase';
 
-const TEST_ITEMS = {
-  BM: {
-    Asas: ["Mengenal huruf dan suku kata", "Membaca perkataan mudah dengan sebutan betul", "Memahami arahan mudah"],
-    Sederhana: ["Membaca ayat mudah dengan lancar dan betul", "Menyatakan isi tersurat dalam teks pendek", "Menjawab soalan kefahaman aras rendah"],
-    Tinggi: ["Memberi pendapat atau sebab", "Menghubungkait maklumat dengan pengalaman sendiri", "Menyelesaikan soalan KBAT (Aplikasi, Analisis, Sintesis)"]
+const LEVEL_DISPLAY_NAMES: Record<string, Record<string, string>> = {
+  Asas: {
+    BM: "Kumpulan Intervensi (Kemahiran Asas)",
+    EN: "Intervention Group (Basic Literacy)",
+    NUM: "Kumpulan Intervensi (Kemahiran Asas Nombor)"
   },
-  EN: {
-    Asas: ["Recognises letters and sounds", "Reads simple words", "Understands simple instructions"],
-    Sederhana: ["Reads simple sentences fluently", "Identifies explicit information", "Answers basic comprehension questions", "Writes a simple meaningful sentence"],
-    Tinggi: ["Makes simple inferences", "Gives simple reasons or opinions", "Applies understanding in new situations", "Responds creatively using simple language"]
+  Sederhana: {
+    BM: "Kumpulan Pengukuhan (Kombinasi & Struktur Perkataan)",
+    EN: "Reinforcement Group (Understanding & Communication)",
+    NUM: "Kumpulan Pengukuhan (Operasi & Penggunaan Asas)"
   },
-  NUM: {
-    Asas: ["Mengenal dan menulis nombor 0-50", "Membilang dan membanding nombor", "Tambah dan tolak mudah"],
-    Sederhana: ["Tambah dan tolak tanpa bahan konkrit", "Menyelesaikan masalah satu langkah", "Memilih operasi yang sesuai"],
-    Tinggi: ["Menyelesaikan masalah dua Langkah atau lebih", "Aplikasi numerasi dalam situasi harian", "Menerangkan strategi penyelesaian (KBAT)"]
+  Tinggi: {
+    BM: "Kumpulan Pengayaan (Pemahaman & Penghasilan Ayat)",
+    EN: "Enrichment Group (Sentence Level & Writing)",
+    NUM: "Kumpulan Pengayaan (Aplikasi Matematik Kompleks)"
   }
 };
+
+const TEST_ITEMS = {
+  BM: {
+    Asas: [
+      "Membaca dan menulis huruf vokal dan konsonan",
+      "Membaca dan menulis suku kata terbuka",
+      "Membaca dan menulis perkataan suku kata terbuka",
+      "Membaca dan menulis suku kata tertutup"
+    ],
+    Sederhana: [
+      "Membaca dan menulis perkataan suku kata tertutup",
+      "Membaca dan menulis perkataan yang mengandungi suku kata tertutup \"ng\"",
+      "Membaca dan menulis perkataan yang mengandungi diftong",
+      "Membaca dan menulis perkataan yang mengandungi vokal berganding"
+    ],
+    Tinggi: [
+      "Menulis perkataan yang mengandungi digraf dan konsonan bergabung",
+      "Membaca dan menulis perkataan berimbuhan",
+      "Membaca dan menulis ayat mudah",
+      "Membaca, memahami dan menulis ayat berdasarkan bahan rangsangan"
+    ]
+  },
+  EN: {
+    Asas: [
+      "Identify and distinguish letters",
+      "Associate sounds with letters",
+      "Blend sounds into words",
+      "Segment words into phonemes"
+    ],
+    Sederhana: [
+      "Understand and use language at word level",
+      "Participate in daily conversations",
+      "Understand phrases in linear texts",
+      "Understand phrases in non-linear texts"
+    ],
+    Tinggi: [
+      "Read and understand sentences with guidance",
+      "Understand sentence level in non-linear texts",
+      "Understand sentence level in linear texts",
+      "Construct sentences with guidance"
+    ]
+  },
+  NUM: {
+    Asas: [
+      "Keupayaan pra nombor dan mengenal angka",
+      "Keupayaan membilang",
+      "Keupayaan memahami nilai nombor",
+      "Keupayaan membuat seriasi"
+    ],
+    Sederhana: [
+      "Keupayaan mengenal mata wang Malaysia",
+      "Keupayaan menyatakan waktu",
+      "Keupayaan mengendalikan operasi asas",
+      "Keupayaan mengendalikan operasi asas melibatkan mata wang Malaysia"
+    ],
+    Tinggi: [
+      "Keupayaan mengukur panjang objek, jisim objek dan isipadu",
+      "Keupayaan menterjemah ayat biasa kepada ayat matematik dan sebaliknya",
+      "Keupayaan mengaplikasikan pengetahuan dan kemahiran dalam kehidupan harian terhad kepada nombor bulat",
+      "Keupayaan mengaplikasikan pengetahuan dan kemahiran dalam kehidupan harian melibatkan mata wang, masa dan ukuran panjang"
+    ]
+  }
+};
+
 
 export default function PhaseTest() {
   const [students, setStudents] = useState<Student[]>([]);
@@ -62,7 +126,22 @@ export default function PhaseTest() {
         .single();
 
       if (data) {
-        setResults(data.items);
+        // Normalize loaded results to match current items length
+        const normalized = { ...data.items };
+        const itemsList = TEST_ITEMS[selectedSubject as keyof typeof TEST_ITEMS];
+        
+        ['Asas', 'Sederhana', 'Tinggi'].forEach(level => {
+          const currentLength = itemsList[level as keyof typeof itemsList].length;
+          let levelArray = normalized[level] || [];
+          if (levelArray.length < currentLength) {
+            levelArray = [...levelArray, ...new Array(currentLength - levelArray.length).fill(false)];
+          } else if (levelArray.length > currentLength) {
+            levelArray = levelArray.slice(0, currentLength);
+          }
+          normalized[level] = levelArray;
+        });
+
+        setResults(normalized);
         setMessage({ type: 'success', text: 'Data ujian fasa sedia ada telah dimuatkan. Anda boleh mengemaskini (overwrite) data ini.' });
       } else {
         resetResults();
@@ -270,7 +349,7 @@ export default function PhaseTest() {
             <div key={level} className="space-y-3">
               <h4 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                 <span className={cn("w-2 h-2 rounded-full", level === 'Asas' ? 'bg-red-500' : level === 'Sederhana' ? 'bg-amber-500' : 'bg-emerald-500')} />
-                Tahap {level}
+                {LEVEL_DISPLAY_NAMES[level]?.[selectedSubject] || `Tahap ${level}`}
               </h4>
               <div className="grid grid-cols-1 gap-2">
                 {items.map((item, idx) => (
