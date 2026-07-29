@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Filter, Calendar, User, BookOpen, ChevronRight, ArrowLeft, TrendingUp, CheckCircle, AlertCircle, FileWarning, ClipboardList } from 'lucide-react';
+import { Search, Filter, Calendar, User, BookOpen, ChevronRight, ArrowLeft, TrendingUp, CheckCircle, AlertCircle, FileWarning, ClipboardList, Users, UserCheck } from 'lucide-react';
 import { CLASSES, Student, Screening, PhaseTest, cn, SUBJECTS, PHASES } from '../types';
 import { supabase } from '../supabase';
+import GroupedStudentList from './GroupedStudentList';
 
 export default function Records() {
   const [students, setStudents] = useState<Student[]>([]);
@@ -11,7 +12,7 @@ export default function Records() {
   const [selectedClass, setSelectedClass] = useState('Semua');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
-  const [showMissingReport, setShowMissingReport] = useState(false);
+  const [activeSubTab, setActiveSubTab] = useState<'individual' | 'grouped' | 'missing'>('individual');
 
   const fetchData = async () => {
     const { data: studentData } = await supabase
@@ -79,7 +80,51 @@ export default function Records() {
     return `${base} bg-slate-100 text-slate-500`;
   };
 
-  if (showMissingReport) {
+  // Sub-tab Navigation rendering
+  const renderSubTabs = () => (
+    <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 pb-4 mb-6">
+      <button
+        onClick={() => { setActiveSubTab('individual'); setSelectedStudentId(null); }}
+        className={cn(
+          "flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all",
+          activeSubTab === 'individual'
+            ? "bg-slate-900 text-white shadow-sm"
+            : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 hover:text-slate-900"
+        )}
+      >
+        <UserCheck size={16} />
+        <span>Rekod Individu Murid</span>
+      </button>
+
+      <button
+        onClick={() => { setActiveSubTab('grouped'); setSelectedStudentId(null); }}
+        className={cn(
+          "flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all",
+          activeSubTab === 'grouped'
+            ? "bg-slate-900 text-white shadow-sm"
+            : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 hover:text-slate-900"
+        )}
+      >
+        <Users size={16} />
+        <span>Senarai Murid Mengikut Kumpulan</span>
+      </button>
+
+      <button
+        onClick={() => { setActiveSubTab('missing'); setSelectedStudentId(null); }}
+        className={cn(
+          "flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all",
+          activeSubTab === 'missing'
+            ? "bg-slate-900 text-white shadow-sm"
+            : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 hover:text-slate-900"
+        )}
+      >
+        <ClipboardList size={16} />
+        <span>Laporan Keciciran Data</span>
+      </button>
+    </div>
+  );
+
+  if (activeSubTab === 'missing') {
     const missingData = students
       .filter(s => selectedClass === 'Semua' || s.class === selectedClass)
       .map(student => {
@@ -109,17 +154,26 @@ export default function Records() {
 
     return (
       <div className="space-y-6">
+        <div>
+          <h2 className="text-2xl font-bold text-slate-900">Rekod & Sejarah Penilaian</h2>
+          <p className="text-slate-500">Jejak perkembangan murid secara berfasa</p>
+        </div>
+
+        {renderSubTabs()}
+
         <div className="flex items-center justify-between">
-          <button 
-            onClick={() => setShowMissingReport(false)}
-            className="flex items-center gap-2 text-slate-500 hover:text-slate-900 transition-colors font-bold text-sm"
-          >
-            <ArrowLeft size={18} /> Kembali ke Rekod
-          </button>
           <div className="flex items-center gap-2 px-4 py-2 bg-red-50 text-red-700 rounded-xl border border-red-100 text-sm font-bold">
             <AlertCircle size={16} />
             {missingData.length} Murid Dengan Data Cicir ({selectedClass})
           </div>
+          <select 
+            value={selectedClass}
+            onChange={e => setSelectedClass(e.target.value)}
+            className="rounded-xl border-slate-200 text-xs font-medium"
+          >
+            <option value="Semua">Semua Kelas</option>
+            {CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
         </div>
 
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
@@ -178,6 +232,25 @@ export default function Records() {
             </table>
           </div>
         </div>
+      </div>
+    );
+  }
+
+  if (activeSubTab === 'grouped') {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h2 className="text-2xl font-bold text-slate-900">Rekod & Sejarah Penilaian</h2>
+          <p className="text-slate-500">Jejak perkembangan murid secara berfasa</p>
+        </div>
+
+        {renderSubTabs()}
+
+        <GroupedStudentList 
+          students={students} 
+          screenings={screenings} 
+          phaseTests={phaseTests} 
+        />
       </div>
     );
   }
@@ -301,20 +374,19 @@ export default function Records() {
 
   return (
     <div className="space-y-6">
+      <div>
+        <h2 className="text-2xl font-bold text-slate-900">Rekod & Sejarah Penilaian</h2>
+        <p className="text-slate-500">Jejak perkembangan murid secara berfasa</p>
+      </div>
+
+      {renderSubTabs()}
+
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-900">Rekod & Sejarah Penilaian</h2>
-          <p className="text-slate-500">Jejak perkembangan murid secara berfasa</p>
-        </div>
+        <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wider">
+          Rekod Individu Murid
+        </h3>
         
         <div className="flex flex-wrap gap-2">
-          <button
-            onClick={() => setShowMissingReport(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 hover:border-red-200 hover:bg-red-50 hover:text-red-600 rounded-xl text-sm font-bold transition-all"
-          >
-            <ClipboardList size={18} />
-            Laporan Keciciran
-          </button>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
             <input 
