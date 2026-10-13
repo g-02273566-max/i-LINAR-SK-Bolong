@@ -97,6 +97,31 @@ export default function PhaseTest() {
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(false);
   const [message, setMessage] = useState<{type: 'success' | 'error', text: string} | null>(null);
+  const [completedMap, setCompletedMap] = useState<Record<string, string>>({});
+
+  const fetchCompletedMap = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('phase_tests')
+        .select('student_id, status')
+        .eq('subject', selectedSubject)
+        .eq('phase', selectedPhase);
+      
+      if (!error && data) {
+        const map: Record<string, string> = {};
+        data.forEach((item: any) => {
+          map[item.student_id] = item.status;
+        });
+        setCompletedMap(map);
+      }
+    } catch (e) {
+      console.error('Error fetching completed tests map:', e);
+    }
+  };
+
+  useEffect(() => {
+    fetchCompletedMap();
+  }, [selectedSubject, selectedPhase]);
 
   const fetchStudents = async () => {
     const { data, error } = await supabase
@@ -252,7 +277,8 @@ export default function PhaseTest() {
         console.warn('Audit log failed:', e);
       }
 
-      setMessage({ type: 'success', text: 'Ujian Pelepasan berjaya direkodkan / dikemaskini!' });
+      await fetchCompletedMap();
+      setMessage({ type: 'success', text: `Ujian Pelepasan Fasa ${selectedPhase} (${selectedSubject}) berjaya direkodkan / dikemaskini!` });
     } catch (error: any) {
       console.error('Error saving phase test:', error);
       setMessage({ type: 'error', text: `Gagal merekod ujian: ${error.message || 'Ralat tidak diketahui'}` });
@@ -263,6 +289,7 @@ export default function PhaseTest() {
   const currentItems = TEST_ITEMS[selectedSubject as keyof typeof TEST_ITEMS];
 
   const filteredStudents = students.filter(s => selectedClass === 'Semua' || s.class === selectedClass);
+  const completedInFiltered = Object.keys(completedMap).filter(id => filteredStudents.some(s => s.id === id)).length;
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -313,14 +340,27 @@ export default function PhaseTest() {
             </div>
 
             <div className="space-y-2">
-              <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Pilih Murid</label>
+              <div className="flex justify-between items-center">
+                <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Pilih Murid</label>
+                <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">
+                  {completedInFiltered} / {filteredStudents.length} Dinilai (F{selectedPhase})
+                </span>
+              </div>
               <select 
                 value={selectedStudent} 
                 onChange={e => setSelectedStudent(e.target.value)} 
                 className="w-full rounded-xl border-slate-200 text-sm"
               >
                 <option value="">-- Pilih Murid --</option>
-                {filteredStudents.map(s => <option key={s.id} value={s.id}>{s.name} ({s.class})</option>)}
+                {filteredStudents.map(s => {
+                  const status = completedMap[s.id];
+                  return (
+                    <option key={s.id} value={s.id}>
+                      {status ? `✓ [${status}] ` : '⏳ (Belum) '}
+                      {s.name} ({s.class})
+                    </option>
+                  );
+                })}
               </select>
             </div>
           </div>

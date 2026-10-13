@@ -51,6 +51,31 @@ export default function Screening() {
     }
   };
 
+  const [completedMap, setCompletedMap] = useState<Record<string, string>>({});
+
+  const fetchCompletedMap = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('screenings')
+        .select('student_id, status')
+        .eq('subject', selectedSubject);
+      
+      if (!error && data) {
+        const map: Record<string, string> = {};
+        data.forEach((item: any) => {
+          map[item.student_id] = item.status;
+        });
+        setCompletedMap(map);
+      }
+    } catch (e) {
+      console.error('Error fetching completed screenings map:', e);
+    }
+  };
+
+  useEffect(() => {
+    fetchCompletedMap();
+  }, [selectedSubject]);
+
   const fetchExistingScreening = async () => {
     if (!selectedStudent || !selectedSubject) return;
     
@@ -148,7 +173,8 @@ export default function Screening() {
         console.warn('Audit log failed:', e);
       }
 
-      setMessage({ type: 'success', text: 'Saringan berjaya direkodkan / dikemaskini!' });
+      await fetchCompletedMap();
+      setMessage({ type: 'success', text: `Ujian Saringan (${selectedSubject}) berjaya direkodkan / dikemaskini!` });
     } catch (error: any) {
       console.error('Error saving screening:', error);
       setMessage({ type: 'error', text: `Gagal merekod saringan: ${error.message || 'Ralat tidak diketahui'}` });
@@ -159,6 +185,7 @@ export default function Screening() {
   const currentItems = SCREENING_ITEMS[selectedSubject as keyof typeof SCREENING_ITEMS];
 
   const filteredStudents = students.filter(s => selectedClass === 'Semua' || s.class === selectedClass);
+  const completedInFiltered = Object.keys(completedMap).filter(id => filteredStudents.some(s => s.id === id)).length;
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
@@ -196,14 +223,27 @@ export default function Screening() {
             </div>
 
             <div className="space-y-2">
-              <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Pilih Murid</label>
+              <div className="flex justify-between items-center">
+                <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Pilih Murid</label>
+                <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">
+                  {completedInFiltered} / {filteredStudents.length} Dinilai ({selectedSubject})
+                </span>
+              </div>
               <select 
                 value={selectedStudent}
                 onChange={(e) => setSelectedStudent(e.target.value)}
                 className="w-full rounded-xl border-slate-200 text-sm focus:ring-emerald-500 focus:border-emerald-500"
               >
                 <option value="">-- Pilih Murid --</option>
-                {filteredStudents.map(s => <option key={s.id} value={s.id}>{s.name} ({s.class})</option>)}
+                {filteredStudents.map(s => {
+                  const status = completedMap[s.id];
+                  return (
+                    <option key={s.id} value={s.id}>
+                      {status ? `✓ [${status}] ` : '⏳ (Belum) '}
+                      {s.name} ({s.class})
+                    </option>
+                  );
+                })}
               </select>
             </div>
           </div>

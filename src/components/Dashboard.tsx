@@ -5,7 +5,7 @@ import {
 } from 'recharts';
 import { Users, TrendingUp, CheckCircle, AlertCircle, Filter } from 'lucide-react';
 import { CLASSES, Student, Screening, PhaseTest, cn } from '../types';
-import { supabase } from '../supabase';
+import { supabase, fetchAllRows } from '../supabase';
 
 export default function Dashboard() {
   const [summary, setSummary] = useState<any>(null);
@@ -20,48 +20,54 @@ export default function Dashboard() {
   const fetchData = async () => {
     setLoading(true);
     
-    let studentQuery = supabase.from('students').select('*').eq('archived', false);
-    
-    const { data: studentList } = await studentQuery;
-    const { data: screeningList } = await supabase.from('screenings').select('*');
-    const { data: phaseTestList } = await supabase.from('phase_tests').select('*');
-    
-    if (!studentList) return;
+    try {
+      const [studentList, screeningList, phaseTestList] = await Promise.all([
+        fetchAllRows<Student>('students', (q) => q.eq('archived', false).order('name', { ascending: true })),
+        fetchAllRows<Screening>('screenings'),
+        fetchAllRows<PhaseTest>('phase_tests'),
+      ]);
+      
+      if (!studentList) return;
 
-    // Filter students for the main dashboard class filter
-    const dashboardStudents = selectedClass === 'Semua' 
-      ? studentList 
-      : studentList.filter(s => s.class === selectedClass);
+      // Filter students for the main dashboard class filter
+      const dashboardStudents = selectedClass === 'Semua' 
+        ? studentList 
+        : studentList.filter(s => s.class === selectedClass);
 
-    const studentIdsForDashboard = new Set(dashboardStudents.map(s => s.id));
-    const filteredScreenings = (screeningList || []).filter(s => studentIdsForDashboard.has(s.student_id));
-    const filteredPhaseTests = (phaseTestList || []).filter(s => studentIdsForDashboard.has(s.student_id));
-    
-    // Calculate latest status for EACH subject for EACH student (Respecting Class Filter)
-    const subjectsList = ['BM', 'EN', 'NUM'];
-    const subjectSummaries: Record<string, Record<string, number>> = {
-      BM: { Intervensi: 0, Pengukuhan: 0, Penggayaan: 0 },
-      EN: { Intervensi: 0, Pengukuhan: 0, Penggayaan: 0 },
-      NUM: { Intervensi: 0, Pengukuhan: 0, Penggayaan: 0 },
-    };
-    const tripleInterventionStudents: any[] = [];
+      const studentIdsForDashboard = new Set(dashboardStudents.map(s => s.id));
+      const filteredScreenings = (screeningList || []).filter(s => studentIdsForDashboard.has(s.student_id));
+      const filteredPhaseTests = (phaseTestList || []).filter(s => studentIdsForDashboard.has(s.student_id));
+      
+      // Calculate latest status for EACH subject for EACH student (Respecting Class Filter)
+      const subjectsList = ['BM', 'EN', 'NUM'];
+      const subjectSummaries: Record<string, Record<string, number>> = {
+        BM: { Intervensi: 0, Pengukuhan: 0, Penggayaan: 0 },
+        EN: { Intervensi: 0, Pengukuhan: 0, Penggayaan: 0 },
+        NUM: { Intervensi: 0, Pengukuhan: 0, Penggayaan: 0 },
+      };
+      const tripleInterventionStudents: any[] = [];
 
-    dashboardStudents.forEach(s => {
-      let interventionCount = 0;
-      const studentLatestStatuses: Record<string, string> = {};
+      dashboardStudents.forEach(s => {
+        let interventionCount = 0;
+        const studentLatestStatuses: Record<string, string> = {};
 
-      subjectsList.forEach(sub => {
-        const latestTest = filteredPhaseTests
-          .filter(pt => pt.student_id === s.id && pt.subject === sub)
-          .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
-        
-        let status = '';
-        if (latestTest) {
-          status = latestTest.status;
-        } else {
-          const screening = filteredScreenings.find(sc => sc.student_id === s.id && sc.subject === sub);
-          status = screening ? screening.status : '';
-        }
+        subjectsList.forEach(sub => {
+          const studentTests = filteredPhaseTests.filter(pt => pt.student_id === s.id && pt.subject === sub);
+          const latestTest = studentTests.sort((a, b) => {
+            // Priority to highest phase number (e.g. Fasa 2 > Fasa 1)
+            if (b.phase !== a.phase) return b.phase - a.phase;
+            const timeB = new Date(b.updated_at || b.created_at || 0).getTime();
+            const timeA = new Date(a.updated_at || a.created_at || 0).getTime();
+            return timeB - timeA;
+          })[0];
+          
+          let status = '';
+          if (latestTest) {
+            status = latestTest.status;
+          } else {
+            const screening = filteredScreenings.find(sc => sc.student_id === s.id && sc.subject === sub);
+            status = screening ? screening.status : '';
+          }
 
         if (status) {
           studentLatestStatuses[sub] = status;
@@ -111,7 +117,7 @@ export default function Dashboard() {
       } else {
         (phaseTestList || [])
           .filter(pt => relevantStudentIds.has(pt.student_id) && pt.phase === pIdx && (!subjectFilter || pt.subject === subjectFilter))
-          .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+          .sort((a, b) => new Date(a.updated_at || a.created_at || 0).getTime() - new Date(b.updated_at || b.created_at || 0).getTime())
           .forEach(pt => latestMap.set(`${pt.student_id}_${pt.subject}`, pt.status));
       }
 
@@ -147,8 +153,11 @@ export default function Dashboard() {
       ...getPhaseCounts(selectedPhaseForClass, selectedSubjectForClass, c)
     }));
     setClassAnalysisData(classAnalysis);
-
-    setLoading(false);
+    } catch (err) {
+      console.error('Error fetching dashboard data:', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
